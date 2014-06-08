@@ -1,0 +1,19 @@
+# FF compilation rules for GNU make
+
+FF_SRC = \
+	$(FF)/FF/ffconf.c   \
+	$(FF)/FF/ffhashtab.c\
+	$(FF)/FF/fflist.c   \
+	$(FF)/FF/ffparse.c  \
+	$(FF)/FF/ffpath.c   \
+	$(FF)/FF/ffrbtree.c \
+	$(FF)/FF/ffstring.c \
+	$(FF)/FF/ffsys.c    \
+	$(FF)/FF/fftime.c
+FF_HDR = $(wildcard $(FF)/FF/*.h)
+
+# FF_OBJ=$(FF_SRC:.c=.o)
+FF_OBJ = $(addprefix $(FF_OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(FF_SRC)))))
+
+$(FF_OBJ_DIR)/%.o: $(FF)/FF/%.c $(FF_HDR)
+	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@

@@ -1,0 +1,52 @@
+# fserv v0.16 makefile
+
+OSTYPE = wint
+OS = win
+FSV_BIN = fserv.exe
+SO = dll
+FSV_SRCDIR = ../src
+ARCH = 64
+RUNDIR=../run
+
+FFOS = ../../ffos
+FFOS_OBJ_DIR = ./ff-obj
+
+FF = ../../ff
+FF_OBJ_DIR = $(FFOS_OBJ_DIR)
+ZLIB = $(FF)/3pt/z/zdll-$(OS)$(ARCH).lib
+
+C = cl.exe
+O = /Fo
+LD = link.exe
+O_LD = /OUT:
+SHARED = /DLL
+
+DBG = /D "NDEBUG"
+
+
+override CFLAGS += \
+	/D "WIN32" /D "_CONSOLE" /D "_UNICODE" /D "UNICODE" $(DBG) \
+	/I$(FSV_SRCDIR) /I$(FF) /I$(FFOS) \
+	/Oi /GL /FD /MT /Gy /W3 /WX /nologo /c /Zi /errorReport:prompt /GF /GR- /TC
+
+override LDFLAGS += /INCREMENTAL:NO /NOLOGO /DEBUG /SUBSYSTEM:CONSOLE \
+	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE /NXCOMPAT /ERRORREPORT:PROMPT
+DEF_LIBS = kernel32.lib user32.lib ws2_32.lib
+
+FSV_LDFLAGS = \
+	/MANIFEST /MANIFESTFILE:".\$(FSV_BIN).intermediate.manifest" /MANIFESTUAC:"level='asInvoker' uiAccess='false'" \
+	/PDB:".\fserv.pdb" \
+	$(DEF_LIBS)
+
+
+MOD_LOG_LDFLAGS = /PDB:".\log.pdb" $(DEF_LIBS)
+
+
+FSV_EXOBJS = *.pdb *.exp *.intermediate.manifest *.lib *.idb
+
+include ./makerules
+
+install: all
+	cp -f $(FSV_BIN) $(RUNDIR)/sbin/
+	cp -f *.$(SO) $(RUNDIR)/mod/
+	cp -n $(FF)/3pt/z/zlib1-$(OS)$(ARCH).dll $(RUNDIR)/mod/zlib1.dll

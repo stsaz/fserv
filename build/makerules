@@ -1,0 +1,37 @@
+include $(FFOS)/makerules
+
+include ./FF-makerules
+
+OBJ_DIR = .
+MOD_ALL = log.$(SO)
+FF_ALL_OBJS = $(FFOS_OBJ) $(FF_OBJ)
+
+all: $(FF_OBJ_DIR) $(FSV_BIN) $(MOD_ALL)
+
+clean:
+	rm -vf \
+		$(FSV_BIN) $(MOD_ALL) \
+		$(FSV_EXOBJS) $(FSV_OBJ) $(MOD_LOG_OBJ)
+
+cleanall: clean
+	rm -vf $(FF_OBJ) $(FFOS_OBJ)
+	rmdir $(FF_OBJ_DIR)
+
+$(FF_OBJ_DIR):
+	mkdir $(FF_OBJ_DIR)
+
+
+SOURCES = $(wildcard $(FSV_SRCDIR)/core/*.c)
+FSV_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(SOURCES)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/core/%.c
+	$(C)  $(CFLAGS) $<  $(O)$@
+$(FSV_BIN): $(FSV_OBJ) $(FF_ALL_OBJS)
+	$(LD)  $(FF_ALL_OBJS) $(FSV_OBJ) $(LDFLAGS) $(FSV_LDFLAGS)  $(O_LD)$@
+
+
+MOD_LOG_SRC = $(wildcard $(FSV_SRCDIR)/log/*.c)
+MOD_LOG_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_LOG_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/log/%.c
+	$(C)  $(CFLAGS) $<  $(O)$@
+log.$(SO): $(MOD_LOG_OBJ) $(FF_ALL_OBJS)
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_LOG_OBJ) $(LDFLAGS) $(MOD_LOG_LDFLAGS) $(ZLIB)  $(O_LD)$@
