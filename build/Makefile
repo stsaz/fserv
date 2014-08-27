@@ -1,4 +1,4 @@
-# fserv v0.16 makefile
+# fserv v0.17 makefile
 
 OSTYPE = unix
 OS = linux
@@ -6,9 +6,9 @@ FSV_BIN = fserv
 SO = so
 FSV_SRCDIR = ../src
 ARCH = 64
+TARGET = amd64
 RUNDIR=../run
-
-FSRV = ../../firmsrv
+VER =
 
 FFOS = ../../ffos
 FFOS_OBJ_DIR = ./ff-obj
@@ -17,18 +17,21 @@ FF = ../../ff
 FF_OBJ_DIR = $(FFOS_OBJ_DIR)
 ZLIB = $(FF)/3pt/z/libz-$(OS)$(ARCH).so.1.2.8
 
+CP = cp -u -v -p
+PACK = tar --owner=0 --group=0 --numeric-owner -cJv
+
 C = gcc
 O = -o
 LD = gcc
 O_LD = -o
 SHARED = -shared
-
+OPT = -O2
 DBG = -g
 # -D_DEBUG
 
-override CFLAGS += -c $(DBG) -Wall -Werror -pthread \
+override CFLAGS += -c $(OPT) $(DBG) -Wall -Werror -pthread \
 	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) \
-	-ffunction-sections -fdata-sections  -fvisibility=hidden -fno-exceptions -fpic \
+	-ffunction-sections -fdata-sections  -fvisibility=hidden -fno-exceptions \
 	-DFF_OLDLIBC
 
 override LDFLAGS += -lrt -pthread \
@@ -41,8 +44,22 @@ FSV_EXOBJS = *.debug
 
 include ./makerules
 
+strip-debug: all
+	sh strip-debug.sh $(FSV_BIN) $(MOD_ALL)
+
 install: all
-	cp -n fserv-exec-unix $(RUNDIR)/sbin/fserv && chmod ug+x $(RUNDIR)/sbin/fserv
-	cp -f $(FSV_BIN) $(RUNDIR)/sbin/$(FSV_BIN).bin
-	cp -f *.$(SO) $(RUNDIR)/mod/
-	cp -n $(ZLIB) $(RUNDIR)/mod/libz.so.1
+	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin
+	$(CP) ../conf/*.conf $(RUNDIR)/conf/
+	$(CP) fserv-exec-unix $(RUNDIR)/sbin/fserv
+	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/$(FSV_BIN)-bin
+	$(CP) *.so $(RUNDIR)/mod/
+	$(CP) $(ZLIB) $(RUNDIR)/mod/libz.so.1
+
+	chmod 755 $(RUNDIR)/sbin/fserv $(RUNDIR)/sbin/$(FSV_BIN)-bin
+	chmod 644 $(RUNDIR)/mod/*.so
+
+package: all install
+	mv $(RUNDIR) ../fserv
+	cd ..  &&  rm -f fserv-$(VER)-$(OS)-$(TARGET).tar.xz \
+		&& $(PACK) -f fserv-$(VER)-$(OS)-$(TARGET).tar.xz ./fserv
+	mv ../fserv $(RUNDIR)

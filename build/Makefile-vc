@@ -1,4 +1,4 @@
-# fserv v0.16 makefile
+# fserv v0.17 makefile
 
 OSTYPE = wint
 OS = win
@@ -6,6 +6,9 @@ FSV_BIN = fserv.exe
 SO = dll
 FSV_SRCDIR = ../src
 ARCH = 64
+TARGET = x64
+WVER = 0x0600
+VER =
 RUNDIR=../run
 
 FFOS = ../../ffos
@@ -14,23 +17,28 @@ FFOS_OBJ_DIR = ./ff-obj
 FF = ../../ff
 FF_OBJ_DIR = $(FFOS_OBJ_DIR)
 ZLIB = $(FF)/3pt/z/zdll-$(OS)$(ARCH).lib
+ZDLL = $(FF)/3pt/z/zlib1-$(OS)$(ARCH).dll
+
+CP = cp -u -v -p
+PACK = zip -9 -r -v
 
 C = cl.exe
 O = /Fo
 LD = link.exe
 O_LD = /OUT:
 SHARED = /DLL
-
-DBG = /D "NDEBUG"
+OPT = /O2
+DBG = /DNDEBUG
 
 
 override CFLAGS += \
-	/D "WIN32" /D "_CONSOLE" /D "_UNICODE" /D "UNICODE" $(DBG) \
+	/DWIN32 /D_CONSOLE /D_UNICODE /DUNICODE $(DBG) \
+	/D_WIN32_WINDOWS=$(WVER) /D_WIN32_WINNT=$(WVER) /DWINVER=$(WVER) \
 	/I$(FSV_SRCDIR) /I$(FF) /I$(FFOS) \
-	/Oi /GL /FD /MT /Gy /W3 /WX /nologo /c /Zi /errorReport:prompt /GF /GR- /TC
+	$(OPT) /Oi /GL /MT /Gy /W3 /WX /nologo /c /Zi /GF /TC
 
 override LDFLAGS += /INCREMENTAL:NO /NOLOGO /DEBUG /SUBSYSTEM:CONSOLE \
-	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE /NXCOMPAT /ERRORREPORT:PROMPT
+	/OPT:REF /OPT:ICF /LTCG /DYNAMICBASE
 DEF_LIBS = kernel32.lib user32.lib ws2_32.lib
 
 FSV_LDFLAGS = \
@@ -41,12 +49,27 @@ FSV_LDFLAGS = \
 
 MOD_LOG_LDFLAGS = /PDB:".\log.pdb" $(DEF_LIBS)
 
+MOD_CACHE_LDFLAGS = /PDB:".\cache.pdb" $(DEF_LIBS)
+
+MOD_NET_LDFLAGS = /PDB:".\net.pdb" $(DEF_LIBS)
+
+MOD_TEST_LDFLAGS = /PDB:".\test.pdb" $(DEF_LIBS)
+
 
 FSV_EXOBJS = *.pdb *.exp *.intermediate.manifest *.lib *.idb
 
 include ./makerules
 
 install: all
-	cp -f $(FSV_BIN) $(RUNDIR)/sbin/
-	cp -f *.$(SO) $(RUNDIR)/mod/
-	cp -n $(FF)/3pt/z/zlib1-$(OS)$(ARCH).dll $(RUNDIR)/mod/zlib1.dll
+	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin
+	$(CP) ../conf/*.conf $(RUNDIR)/conf/
+	$(CP) fserv-exec-win.cmd $(RUNDIR)/sbin/fserv.cmd
+	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/fserv-bin.exe
+	$(CP) *.$(SO) $(RUNDIR)/mod/
+	$(CP) $(ZDLL) $(RUNDIR)/mod/zlib1.dll
+
+package: install
+	mv $(RUNDIR) ../fserv
+	cd ..  &&  rm -f fserv-$(VER)-windows-$(TARGET).zip \
+		&& $(PACK) fserv-$(VER)-windows-$(TARGET).zip fserv
+	mv ../fserv $(RUNDIR)

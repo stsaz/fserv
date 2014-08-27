@@ -2,6 +2,7 @@
 
 FF_SRC = \
 	$(FF)/FF/ffconf.c   \
+	$(FF)/FF/ffcrc.c   \
 	$(FF)/FF/ffhashtab.c\
 	$(FF)/FF/fflist.c   \
 	$(FF)/FF/ffparse.c  \
@@ -9,11 +10,17 @@ FF_SRC = \
 	$(FF)/FF/ffrbtree.c \
 	$(FF)/FF/ffstring.c \
 	$(FF)/FF/ffsys.c    \
-	$(FF)/FF/fftime.c
-FF_HDR = $(wildcard $(FF)/FF/*.h)
+	$(FF)/FF/fftime.c   \
+	\
+	$(FF)/FF/net/ffdns.c\
+	$(FF)/FF/net/ffurl.c
+FF_HDR = $(wildcard $(FF)/FF/*.h) $(wildcard $(FF)/FF/net/*.h)
 
 # FF_OBJ=$(FF_SRC:.c=.o)
 FF_OBJ = $(addprefix $(FF_OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(FF_SRC)))))
 
 $(FF_OBJ_DIR)/%.o: $(FF)/FF/%.c $(FF_HDR)
+	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@
+
+$(FF_OBJ_DIR)/%.o: $(FF)/FF/net/%.c $(FF_HDR)
 	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@

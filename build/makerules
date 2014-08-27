@@ -3,19 +3,19 @@ include $(FFOS)/makerules
 include ./FF-makerules
 
 OBJ_DIR = .
-MOD_ALL = log.$(SO)
+MOD_ALL = log.$(SO) cache.$(SO) net.$(SO)
 FF_ALL_OBJS = $(FFOS_OBJ) $(FF_OBJ)
 
 all: $(FF_OBJ_DIR) $(FSV_BIN) $(MOD_ALL)
 
 clean:
 	rm -vf \
-		$(FSV_BIN) $(MOD_ALL) \
-		$(FSV_EXOBJS) $(FSV_OBJ) $(MOD_LOG_OBJ)
+		$(FSV_BIN) $(MOD_ALL) test.$(SO) \
+		$(FSV_EXOBJS) $(FSV_OBJ) $(MOD_NET_OBJ) $(MOD_LOG_OBJ) $(MOD_CACHE_OBJ) $(MOD_TEST_OBJ)
 
-cleanall: clean
-	rm -vf $(FF_OBJ) $(FFOS_OBJ)
-	rmdir $(FF_OBJ_DIR)
+distclean: clean
+	rm -vfr $(FF_OBJ) $(FF_OBJ_DIR)
+	rm -vfr $(RUNDIR) ../fserv-*.zip ../fserv-*.tar.xz
 
 $(FF_OBJ_DIR):
 	mkdir $(FF_OBJ_DIR)
@@ -35,3 +35,27 @@ $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/log/%.c
 	$(C)  $(CFLAGS) $<  $(O)$@
 log.$(SO): $(MOD_LOG_OBJ) $(FF_ALL_OBJS)
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_LOG_OBJ) $(LDFLAGS) $(MOD_LOG_LDFLAGS) $(ZLIB)  $(O_LD)$@
+
+
+MOD_CACHE_SRC = $(wildcard $(FSV_SRCDIR)/cache/*.c)
+MOD_CACHE_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_CACHE_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/cache/%.c
+	$(C)  $(CFLAGS)  $<  $(O)$@
+cache.$(SO): $(MOD_CACHE_OBJ) $(FF_ALL_OBJS)
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_CACHE_OBJ) $(LDFLAGS) $(MOD_CACHE_LDFLAGS)  $(O_LD)$@
+
+
+MOD_NET_SRC = $(wildcard $(FSV_SRCDIR)/net/*.c)
+MOD_NET_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_NET_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/net/%.c
+	$(C)  $(CFLAGS)  $<  $(O)$@
+net.$(SO): $(MOD_NET_OBJ) $(FF_ALL_OBJS)
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_NET_OBJ) $(LDFLAGS) $(MOD_NET_LDFLAGS)  $(O_LD)$@
+
+
+MOD_TEST_SRC = $(wildcard $(FSV_SRCDIR)/test/*.c)
+MOD_TEST_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_TEST_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/test/%.c
+	$(C)  $(CFLAGS)  $<  $(O)$@
+test.$(SO): $(MOD_TEST_OBJ) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o $(MOD_TEST_OBJ) $(LDFLAGS) $(MOD_TEST_LDFLAGS)  $(O_LD)$@

@@ -3,4 +3,4 @@
 DIR=`dirname $0`
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$DIR/../mod
 
-$DIR/fserv.bin $@
+$DIR/fserv-bin $@

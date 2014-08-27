@@ -22,6 +22,9 @@ Copyright 2014 Simon Zolin
 #define syserrlog(level, fmt, ...) \
 	fsv_syserrlog(serv->logctx, level, "FSRV", NULL, fmt, __VA_ARGS__)
 
+#define errlog2(logctx, level, ...) \
+	fsv_errlog(logctx, level, "FSRV", NULL, __VA_ARGS__)
+
 static fserver *serv;
 
 
@@ -34,7 +37,7 @@ static const char * srv_errstr(void);
 static const fsv_main fsv_mainiface = {
 	&srv_create, &srv_destroy, &srv_readconf, &srv_sig, &srv_errstr
 };
-const fsv_main * fsv_getmain()
+FF_EXTN FF_EXP const fsv_main * fsv_getmain()
 {
 	return &fsv_mainiface;
 }
@@ -44,14 +47,15 @@ static const fsvcore_config * srv_getconf(void);
 static ssize_t srv_getpath(char *dst, size_t dstsz, const char *path, size_t len);
 static fftime srv_gettime4(ffdtm *dt, char *dst, size_t cap, uint flags);
 static const fsv_modinfo * srv_findmod(const char *name, size_t namelen);
-static int srv_getvar(const char *name, size_t namelen, ffstr *dst);
+static ssize_t srv_getvar(const char *name, size_t namelen, void *dst, size_t cap);
+static int srv_process_vars(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx);
 static void srv_timer(fsv_timer *tmr, int64 interval_ms, fftmrq_handler func, void *param);
 static int srv_usertask(fsv_task *task, int op);
 static const fsv_core srvcore = {
 	&srv_getconf
 	, &srv_getpath
 	, &srv_findmod
-	, &srv_getvar
+	, &srv_getvar, &srv_process_vars
 	, &srv_gettime4
 	, &srv_timer
 	, &srv_usertask
@@ -91,12 +95,6 @@ static void curtime_update(const fftime *now, void *param);
 static uint curtime_get(curtime_t *tt, fftime *t, ffdtm *dt, char *dst, size_t cap, uint flags);
 
 
-FF_EXTN FF_EXP const fsv_mod * fsv_getmod(const char *name)
-{
-	return NULL;
-}
-
-
 static void * srv_create(void)
 {
 	if (0 != ffskt_init(FFSKT_WSA))
@@ -130,7 +128,7 @@ static void mod_destroy(fmodule *m)
 	ffmem_free(m);
 }
 
-#ifdef FF_WIN
+#ifdef FF_MSVC
 enum {
 	SIGINT = 1
 	, SIGHUP
@@ -250,9 +248,10 @@ static int srv_conf_rootdir(ffparser_schem *ps, fserver *srv, const ffstr *s)
 	if (n == 0)
 		return FFPARS_EBADVAL;
 
-	n = ffstr_catfmt(&fn, "%*s%*c%Z"
-		, n, root
-		, (!ffpath_slash(root[n - 1]) ? (size_t)1 : (size_t)0), '/');
+	if (ffpath_slash(root[n - 1]))
+		n--; //rm last '/'
+
+	n = ffstr_catfmt(&fn, "%*s/%Z", n, root);
 	if (n == 0)
 		return FFPARS_ESYS;
 	ffstr_set(&serv->rootdir, fn.ptr, fn.len - 1);
@@ -338,6 +337,9 @@ static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod)
 	char fn[FF_MAXPATH];
 	size_t len;
 
+	if (!ffpath_isvalidfn(binfn->ptr, binfn->len))
+		return FFPARS_EBADVAL;
+
 	len = ffs_fmt(fn, fn + FFCNT(fn), "%Smod/%S." FFDL_EXT "%Z"
 		, &serv->rootdir, binfn);
 	if (len == FFCNT(fn))
@@ -371,18 +373,22 @@ static int srv_conf_mod(ffparser_schem *ps, fserver *srv, ffpars_ctx *a)
 	enum { MAX_MOD_NAME = 255 };
 	char namez[MAX_MOD_NAME + 1];
 	char *end;
-	fsv_getmod_t getmod = &fsv_getmod;
+	fsv_getmod_t getmod;
+	int r;
 
 	str_split2(name->ptr, name->len, '.', &binfn, &modname);
 
 	if (name->len > MAX_MOD_NAME)
 		return FFPARS_EBIGVAL;
 
-	if (binfn.len != 0) {
-		int r = srv_getmod(&binfn, &dl, &getmod);
-		if (r != 0)
-			return r;
+	if (binfn.len == 0) {
+		srv_errsave(-1, "module name is not specified: %S", name);
+		return FFPARS_EBADVAL;
 	}
+
+	r = srv_getmod(&binfn, &dl, &getmod);
+	if (r != 0)
+		return r;
 
 	end = ffs_copystr(namez, namez + FFCNT(namez), &modname);
 	*end = '\0';
@@ -401,7 +407,7 @@ static int srv_conf_mod(ffparser_schem *ps, fserver *srv, ffpars_ctx *a)
 	m->mod.instance = miface->create(&srvcore, a, &m->mod);
 	if (m->mod.instance == NULL) {
 		ffmem_free(m);
-		srv_errsave(-1, "create module");
+		srv_errsave(-1, "create module: %s", namez);
 		return FFPARS_ESYS;
 	}
 
@@ -534,12 +540,57 @@ static fftime srv_gettime4(ffdtm *dt, char *dst, size_t cap, uint flags)
 	return t;
 }
 
-static int srv_getvar(const char *name, size_t namelen, ffstr *dst)
+static ssize_t srv_getvar(const char *name, size_t namelen, void *dst, size_t cap)
 {
-	if (ffs_ieqcz(name, namelen, "server_name"))
-		ffstr_setcz(dst, "fserv/" FSV_VER);
-	else
+	if (ffs_ieqcz(name, namelen, "server_name")) {
+		*(char**)dst = "fserv/" FSV_VER;
+		return FFSLEN("fserv/" FSV_VER);
+
+	} else
 		return -1;
+	return 0;
+}
+
+static int srv_process_vars(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx)
+{
+	ffstr3 s = {0};
+	ffstr sname, sval;
+	const char *p = src->ptr
+		, *end = src->ptr + src->len;
+
+	while (p != end) {
+
+		if (*p != '$') {
+			sval.ptr = (char*)p;
+			p = ffs_find(p, end - p, '$');
+			sval.len = p - sval.ptr;
+
+		} else {
+
+			p++; //skip $
+			sname.ptr = (char*)p;
+			for (; p != end; p++) {
+				if (!ffchar_isname(*p))
+					break;
+			}
+			sname.len = p - sname.ptr;
+
+			sval.len = getvar(udata, sname.ptr, sname.len, &sval.ptr, 0);
+			if (sval.len == -1) {
+				errlog2(logctx, FSV_LOG_ERR, "srv_process_vars(): unknown variable: $%S", &sname);
+				return 2;
+			}
+		}
+
+		if (NULL == ffarr_grow(&s, sval.len, FFARR_GROWQUARTER)) {
+			errlog2(logctx, FSV_LOG_ERR, "srv_process_vars(): %e: by %L bytes"
+				, FFERR_BUFGROW, sval.len);
+			return 1;
+		}
+		ffstr3_cat(&s, sval.ptr, sval.len);
+	}
+
+	ffstr_acqstr3(dst, &s);
 	return 0;
 }
 

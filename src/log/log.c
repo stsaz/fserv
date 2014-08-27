@@ -12,7 +12,7 @@ static void * logm_create(const fsv_core *srv, ffpars_ctx *c, fsv_modinfo *m);
 static void logm_fin(void);
 static int logm_sig(int sig);
 static const void * logm_iface(const char *name);
-const fsv_mod fsv_log_mod = {
+static const fsv_mod fsv_log_mod = {
 	&logm_create, &logm_fin, &logm_sig, &logm_iface
 };
 
@@ -44,12 +44,17 @@ static void logx_free(fsv_logctx *lx);
 static void logx_output(fsv_logctx *lx, uint lev, const char *msg, size_t len);
 
 
-FF_EXTN const fsv_mod fsv_log_mod;
+#ifdef FF_WIN
+BOOL DllMain(HMODULE p1, DWORD p2, void *p3)
+{
+	ffos_init();
+	return 1;
+}
+#endif
 
 FF_EXTN FF_EXP	const fsv_mod * fsv_getmod(const char *name)
 {
-	ffos_init();
-	if (!ffsz_icmp(name, "log"))
+	if (!ffsz_cmp(name, "log"))
 		return &fsv_log_mod;
 	return NULL;
 }

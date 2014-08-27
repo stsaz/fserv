@@ -9,15 +9,20 @@ Copyright 2014 Simon Zolin.
 #include <FF/parse.h>
 #include <FF/timer-queue.h>
 #include <FF/taskqueue.h>
+#include <FF/sendfile.h>
 
 
-#define FSV_VER "0.16"
+#define FSV_VER "0.17"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;
 typedef struct fsv_mod fsv_mod;
 typedef struct fsv_log fsv_log;
 typedef struct fsv_logctx fsv_logctx;
+typedef struct fsv_cache fsv_cache;
+typedef struct fsv_listen fsv_listen;
+typedef struct fsv_connect fsv_connect;
+typedef struct fsv_resolver fsv_resolver;
 
 /** Get module interface by name.
 A module implements the function fsv_getmod() and exports it.
@@ -50,8 +55,6 @@ struct fsv_main {
 	const char * (*errstr)(void);
 };
 
-FF_EXTN const fsv_main * fsv_getmain(void);
-
 enum FSV_TIME {
 	FSV_TIME_YMD
 	, FSV_TIME_YMD_LOCAL
@@ -80,6 +83,7 @@ enum FSVCORE_TASK {
 
 typedef fftask fsv_task;
 typedef fftmrq_entry fsv_timer;
+typedef ssize_t (*fsv_getvar_t)(void *udata, const char *name, size_t namelen, void *dst, size_t cap);
 
 struct fsv_core {
 	const fsvcore_config * (*conf)(void);
@@ -96,7 +100,11 @@ struct fsv_core {
 	const fsv_modinfo * (*findmod)(const char *name, size_t namelen);
 
 	/** Return -1 on error. */
-	int (*getvar)(const char *name, size_t namelen, ffstr *dst);
+	ssize_t (*getvar)(const char *name, size_t namelen, void *dst, size_t cap);
+
+	/** Process dynamic variables.
+	Return 0 on success.  Free @dst with ffstr_free(). */
+	int (*process_vars)(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx);
 
 	/** Get current time.
 	@dt, @dst: optional.
@@ -202,3 +210,218 @@ do { \
 	if (fsv_log_checkdbglevel(ctx, level)) \
 		fsv_logctx_get(ctx)->mlog->add(ctx, FSV_LOG_DBG | (level), modname, txn, __VA_ARGS__); \
 } while (0)
+
+/* ====================================================================== */
+
+typedef struct fsv_cachectx fsv_cachectx;
+typedef struct fsv_cacheitem_id fsv_cacheitem_id;
+
+enum FSV_CACH_E {
+	FSV_CACH_OK
+	, FSV_CACH_ESYS
+	, FSV_CACH_EEXISTS
+	, FSV_CACH_ENOTFOUND
+	, FSV_CACH_ECOLL
+	, FSV_CACH_ENUMLIMIT
+	, FSV_CACH_EMEMLIMIT
+	, FSV_CACH_ESZLIMIT
+	, FSV_CACH_ELOCKED
+};
+
+typedef struct fsv_cacheitem {
+	fsv_cacheitem_id *id;
+	uint hash[1];
+	fsv_logctx *logctx;
+
+	size_t keylen;
+	const char *key;
+
+	size_t datalen;
+	const char *data;
+
+	uint refs;
+	uint expire; //max-age, in sec
+} fsv_cacheitem;
+
+static FFINL void fsv_cache_init(fsv_cacheitem *ca) {
+	ffmem_tzero(ca);
+	ca->refs = 1;
+}
+
+enum FSV_CACH_NEWCTX {
+	FSV_CACH_KEYICASE = 1 //case-insensitive keys
+	, FSV_CACH_MULTI = 2 //support several items with the same key
+};
+
+enum FSV_CACH_FETCH {
+	FSV_CACH_NEXT = 1 //fetch the next item with the same key, for FSV_CACH_MULTI
+	, FSV_CACH_ACQUIRE = 2 //acquire the item (fetch and remove from the cache)
+};
+
+enum FSV_CACH_UNREF {
+	FSV_CACH_UNLINK = 1
+};
+
+// enum FSV_CACH_STORE {
+// };
+
+enum FSV_CACH_CB {
+	FSV_CACH_ONDELETE
+};
+
+typedef struct fsv_cach_cb {
+	/** @flags: enum FSV_CACH_CB. */
+	int (*onchange)(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
+} fsv_cach_cb;
+
+struct fsv_cache {
+	/** @flags: enum FSV_CACH_NEWCTX. */
+	fsv_cachectx * (*newctx)(ffpars_ctx *a, const fsv_cach_cb *cb, int flags);
+
+	/** @flags: enum FSV_CACH_FETCH.
+	Return enum FSV_CACH_E. */
+	int (*fetch)(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
+
+	/** @flags: enum FSV_CACH_STORE.
+	Return enum FSV_CACH_E. */
+	int (*store)(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
+
+	/** Return enum FSV_CACH_E. */
+	int (*update)(fsv_cacheitem *ca, int flags);
+
+	/** @flags: enum FSV_CACH_UNREF.
+	Return enum FSV_CACH_E. */
+	int (*unref)(fsv_cacheitem *ca, int flags);
+};
+
+/* ====================================================================== */
+
+typedef struct fsv_lsnctx fsv_lsnctx;
+typedef struct fsv_lsncon fsv_lsncon;
+
+enum FSV_LISN_SIG {
+	FSV_LISN_SIGSTOP
+};
+
+typedef struct fsv_listen_cb {
+	void (*onaccept)(void *userctx, fsv_lsncon *conn);
+
+	/** @sig: enum FSV_LISN_SIG. */
+	int (*onsig)(fsv_lsncon *conn, void *userptr, int sig);
+} fsv_listen_cb;
+
+enum FSV_IO_E {
+	FSV_IO_ESHUT = 0 //peer closed the writing channel
+	, FSV_IO_ERR = -1 //I/O error occurred
+	, FSV_IO_EAGAIN = -2 //I/O operation would block
+	, FSV_IO_ASYNC = -3 //async I/O operation was started
+};
+
+enum FSV_LISN_FIN {
+	FSV_LISN_LINGER = 1
+};
+
+enum FSV_LISN_OPT {
+	FSV_LISN_OPT_USERPTR = 1 //void*
+	, FSV_LISN_OPT_LOG //fsv_logctx*
+};
+
+struct fsv_listen {
+	fsv_lsnctx * (*newctx)(ffpars_ctx *a, const fsv_listen_cb *h, void *userctx);
+
+	ssize_t (*getvar)(fsv_lsncon *conn, const char *name, size_t namelen, void *dst, size_t cap);
+
+	/** Set option on a connection object.
+	@opt: enum FSV_LISN_OPT. */
+	int (*setopt)(fsv_lsncon *conn, int opt, void *data);
+
+	/**
+	@flags: enum FSV_LISN_FIN */
+	void (*fin)(fsv_lsncon *conn, int flags);
+
+	/** Receive/send data.
+	@udata: opaque value passed to handler().
+	@handler: if NULL, perform operation synchronously.  If not NULL, asynchronously.
+	Return >0 or enum FSV_IO_E. */
+	ssize_t (*recv)(fsv_lsncon *conn, void *buf, size_t size, ffaio_handler handler, void *udata);
+	ssize_t (*send)(fsv_lsncon *conn, const void *buf, size_t len, ffaio_handler handler, void *udata);
+	ssize_t (*sendfile)(fsv_lsncon *conn, ffsf *sf, ffaio_handler handler, void *udata);
+
+	/** Cancel asynchronous read/send.
+	@op: enum FFAIO_CANCEL. */
+	int (*cancelio)(fsv_lsncon *conn, int op, ffaio_handler handler, void *udata);
+};
+
+/* ====================================================================== */
+
+typedef struct fsv_conctx fsv_conctx;
+typedef struct fsv_conn fsv_conn;
+
+enum FSV_CONN_E {
+	FSV_CONN_OK
+	, FSV_CONN_ESYS
+	, FSV_CONN_EURL
+	, FSV_CONN_EDNS
+	, FSV_CONN_ENOADDR
+	, FSV_CONN_ENOSERV
+};
+
+enum FSV_CONN_FIN {
+	FSV_CONN_KEEPALIVE = 1 //store socket in cache
+};
+
+typedef struct fsv_connect_cb {
+	void (*onconnect)(void *userptr, int result);
+	ssize_t (*getvar)(void *obj, const char *name, size_t namelen, void *dst, size_t cap);
+} fsv_connect_cb;
+
+typedef struct fsv_conn_new {
+	fsv_conn *con; //in/out
+	void *userptr;
+	fsv_logctx *logctx;
+	ffstr url; //out
+} fsv_conn_new;
+
+struct fsv_connect {
+	fsv_conctx * (*newctx)(ffpars_ctx *a, const fsv_connect_cb *cb);
+	ssize_t (*getvar)(fsv_conn *c, const char *name, size_t namelen, void *dst, size_t cap);
+
+	int (*getserv)(fsv_conctx *cx, fsv_conn_new *nc, int flags);
+
+	/** onconnect() will be called with the result of connect operation. */
+	void (*connect)(fsv_conn *c, int flags);
+
+	/** @flags: enum FSV_CONN_FIN. */
+	int (*fin)(fsv_conn *c, int flags);
+
+	/** Return >0 or enum FSV_IO_E. */
+	ssize_t (*recv)(fsv_conn *c, void *buf, size_t size, ffaio_handler handler, void *udata);
+	ssize_t (*send)(fsv_conn *c, const void *buf, size_t len, ffaio_handler handler, void *udata);
+	ssize_t (*sendfile)(fsv_conn *c, ffsf *sf, ffaio_handler handler, void *udata);
+
+	int (*cancelio)(fsv_conn *c, int op, ffaio_handler handler, void *udata);
+};
+
+/* ====================================================================== */
+
+/** Resolver calls this function to report the final status of the query.
+@status: enum FFDNS_R. */
+typedef void (*fsv_resolv_cb)(void *udata, int status, const ffaddrinfo *ai[2]);
+
+typedef struct fsv_resolv_ctx fsv_resolv_ctx;
+
+enum FSV_RESOLV_F {
+	FSV_RESOLV_CANCEL = 1
+};
+
+struct fsv_resolver {
+	fsv_resolv_ctx * (*newctx)(ffpars_ctx *a);
+
+	/** Asynchronous DNS resolve.
+	@handler: on-completion callback.  If NULL, cancel the pending task that is linked with name and udata.
+	@udata: opaque value passed to handler().
+	@flags: enum FSV_RESOLV_F. */
+	int (*resolve)(fsv_resolv_ctx *ctx, const char *name, size_t len, fsv_resolv_cb handler, void *udata, int flags);
+
+	void (*unref)(const ffaddrinfo *ai);
+};

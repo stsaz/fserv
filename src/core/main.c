@@ -267,6 +267,8 @@ static fffd bgrun(const cmdline *opts)
 }
 #endif
 
+FF_EXTN const fsv_main * fsv_getmain(void);
+
 int main(int argc, const char **argv)
 {
 	cmdline opts;
@@ -337,6 +339,7 @@ serve:
 		goto serve;
 
 	case -1:
+		flog_err("error", "%s", fsv->errstr());
 		goto fin;
 
 	default:
