@@ -5,6 +5,7 @@ Copyright (c) 2014 Simon Zolin
 #include "log.h"
 #include <FFOS/error.h>
 #include <FFOS/process.h>
+#include <FF/json.h>
 
 
 // FSERV MODULE
@@ -26,11 +27,16 @@ static fsv_log fsv_log_iface = {
 
 // MOD
 static int logm_start();
-static int logm_status();
 static void logm_flush();
 static void logm_flushtimer(const fftime *now, void *param) {
 	logm_flush();
 }
+
+// STATUS
+static void log_status(const fsv_status *statusmod);
+static const fsv_status_handler log_stat_iface = {
+	&log_status
+};
 
 // CTX CONFIG
 static int logx_conf_setlevel(ffparser_schem *ps, fsv_logctx *lx, const ffstr *s);
@@ -44,13 +50,11 @@ static void logx_free(fsv_logctx *lx);
 static void logx_output(fsv_logctx *lx, uint lev, const char *msg, size_t len);
 
 
-#ifdef FF_WIN
-BOOL DllMain(HMODULE p1, DWORD p2, void *p3)
+static void oninit(void)
 {
 	ffos_init();
-	return 1;
 }
-#endif
+FFDL_ONINIT(oninit, NULL)
 
 FF_EXTN FF_EXP	const fsv_mod * fsv_getmod(const char *name)
 {
@@ -202,18 +206,11 @@ static int logx_conf_validate(ffparser_schem *ps, fsv_logctx *lx)
 	} else
 		*lev &= ~FSV_LOG_DBGMASK; //no debug events if no debug level
 
+	if (0 != logx_start(lx))
+		return FFPARS_EINTL;
 	return 0;
 }
 
-
-static int logx_add_dummy(fsv_logctx *lx, int level, const char *modname, const ffstr *trid, const char *fmt, ...)
-{
-	return 0;
-}
-static int logx_addv_dummy(fsv_logctx *ctx, int level, const char *modname, const ffstr *trid, const char *fmt, va_list va)
-{
-	return 0;
-}
 
 static void * logm_create(const fsv_core *srv, ffpars_ctx *c, fsv_modinfo *m)
 {
@@ -226,8 +223,11 @@ static void * logm_create(const fsv_core *srv, ffpars_ctx *c, fsv_modinfo *m)
 	logm->use_time = LOGTM_LOCAL;
 	fflist_init(&logm->ctxs);
 
-	fsv_log_iface.add = &logx_add_dummy; // do nothing until the module is started
-	fsv_log_iface.addv = &logx_addv_dummy;
+	// get PID as a string
+	{
+	int i = ffs_fromint(ffps_curid(), logm->pid, FFCNT(logm->pid), 0);
+	logm->pid[i] = '\0';
+	}
 
 	ffpars_setargs(c, logm, logm_args, FFCNT(logm_args));
 	return logm;
@@ -251,9 +251,6 @@ static int logm_sig(int sig)
 		logm_flush();
 		break;
 
-	case FSVCORE_SIGSTATUS:
-		return logm_status();
-
 	case FSVCORE_SIGREOPEN: {
 		fsv_logctx *lx;
 		logoutput *out;
@@ -273,35 +270,17 @@ static const void * logm_iface(const char *name)
 {
 	if (0 == strcmp(name, "log"))
 		return &fsv_log_iface;
+	else if (!ffsz_cmp(name, "json-status"))
+		return &log_stat_iface;
 	return NULL;
 }
 
 
 static int logm_start()
 {
-	fsv_logctx *lx;
-	int i;
-
-	// get PID as a string
-	i = ffs_fromint(ffps_curid(), logm->pid, FFCNT(logm->pid), 0);
-	logm->pid[i] = '\0';
-
-	FFLIST_WALK(&logm->ctxs, lx, sib) {
-		if (0 != logx_start(lx))
-			return 1;
-	}
-
-	fsv_log_iface.add = &logx_add;
-	fsv_log_iface.addv = &logx_addv;
-
 	if (logm->flush_delay != 0)
 		logm->srv->timer(&logm->flush_timer, logm->flush_delay, &logm_flushtimer, logm);
 
-	return 0;
-}
-
-static int logm_status()
-{
 	return 0;
 }
 
@@ -314,6 +293,30 @@ static void logm_flush()
 			out->iface->open(out->instance, LOG_FLUSH);
 		}
 	}
+}
+
+static const int log_status_json[] = {
+	FFJSON_TOBJ
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_TOBJ
+};
+
+static void log_status(const fsv_status *statusmod)
+{
+	ffjson_cook status_json;
+	char buf[4096];
+	ffjson_cookinit(&status_json, buf, sizeof(buf));
+
+	ffjson_addv(&status_json, log_status_json, FFCNT(log_status_json)
+		, FFJSON_CTXOPEN
+		, "messages", (int64)ffatom_get(&logm->stat_messages)
+		, "size", (int64)ffatom_get(&logm->stat_written)
+		, FFJSON_CTXCLOSE
+		, NULL);
+
+	statusmod->setdata(status_json.buf.ptr, status_json.buf.len, 0);
+	ffjson_cookfin(&status_json);
 }
 
 
@@ -369,8 +372,12 @@ static void logx_output(fsv_logctx *lx, uint lev, const char *msg, size_t len)
 		}
 	}
 
-	if (lx->pass_to_std)
-		fffile_write(ffstdout, msg, len);
+	if (lx->pass_to_std) {
+		fffd f = ffstdout;
+		if (lev == FSV_LOG_ERR || lev == FSV_LOG_WARN)
+			f = ffstderr;
+		fffile_write(f, msg, len);
+	}
 }
 
 static int logx_add(fsv_logctx *lx, int level, const char *modname, const ffstr *trid, const char *fmt, ...)
@@ -389,7 +396,7 @@ static int logx_addv(fsv_logctx *lx, int level, const char *modname, const ffstr
 	char ss[4096];
 	char ss_encoded[4096 * 3];
 	char *s = ss;
-	const char *end = ss + FFCNT(ss);
+	const char *end = ss + sizeof(ss) - FFSLEN(FF_NEWLN);
 	char *msg = ss;
 	size_t msgsz;
 
@@ -427,7 +434,7 @@ static int logx_addv(fsv_logctx *lx, int level, const char *modname, const ffstr
 
 	s += ffs_fmtv(s, end, fmt, va);
 
-	s = ffs_copyz(s, end, FF_NEWLN);
+	s = ffs_copyz(s, ss + sizeof(ss), FF_NEWLN);
 
 	msgsz = s - ss;
 
@@ -441,6 +448,9 @@ static int logx_addv(fsv_logctx *lx, int level, const char *modname, const ffstr
 	}
 
 	logx_output(lx, level, msg, msgsz);
+
+	ffatom_add(&logm->stat_written, msgsz);
+	ffatom_inc(&logm->stat_messages);
 
 	return 0;
 }

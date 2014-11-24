@@ -3,17 +3,17 @@ Copyright 2014 Simon Zolin.
 */
 
 #include <core/fserv.h>
+#include <FFOS/process.h>
 
 
-#ifdef FF_WIN
-BOOL DllMain(HMODULE p1, DWORD p2, void *p3)
+static void oninit(void)
 {
 	ffos_init();
 	if (0 != ffskt_init(FFSKT_WSAFUNCS))
-		return 0;
-	return 1;
+		ffps_exit(1);
 }
-#endif
+FFDL_ONINIT(oninit, NULL)
+
 
 FF_EXTN const fsv_mod fsv_lsn_mod;
 FF_EXTN const fsv_mod fsv_conn_mod;

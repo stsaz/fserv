@@ -1,24 +1,10 @@
-include $(FFOS)/makerules
-
 include ./FF-makerules
 
 OBJ_DIR = .
-MOD_ALL = log.$(SO) cache.$(SO) net.$(SO)
+MOD_ALL = log.$(SO) cache.$(SO) net.$(SO) http.$(SO)
 FF_ALL_OBJS = $(FFOS_OBJ) $(FF_OBJ)
 
 all: $(FF_OBJ_DIR) $(FSV_BIN) $(MOD_ALL)
-
-clean:
-	rm -vf \
-		$(FSV_BIN) $(MOD_ALL) test.$(SO) \
-		$(FSV_EXOBJS) $(FSV_OBJ) $(MOD_NET_OBJ) $(MOD_LOG_OBJ) $(MOD_CACHE_OBJ) $(MOD_TEST_OBJ)
-
-distclean: clean
-	rm -vfr $(FF_OBJ) $(FF_OBJ_DIR)
-	rm -vfr $(RUNDIR) ../fserv-*.zip ../fserv-*.tar.xz
-
-$(FF_OBJ_DIR):
-	mkdir $(FF_OBJ_DIR)
 
 
 SOURCES = $(wildcard $(FSV_SRCDIR)/core/*.c)
@@ -53,9 +39,42 @@ net.$(SO): $(MOD_NET_OBJ) $(FF_ALL_OBJS)
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_NET_OBJ) $(LDFLAGS) $(MOD_NET_LDFLAGS)  $(O_LD)$@
 
 
+MOD_HTTP_SRC = $(wildcard $(FSV_SRCDIR)/http/*.c)
+MOD_HTTP_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_HTTP_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http/%.c $(wildcard $(FSV_SRCDIR)/http/*.h)
+	$(C)  $(CFLAGS)  $<  $(O)$@
+http.$(SO): $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ)
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_HTTP_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_HTTP_LDFLAGS) $(ZLIB)  $(O_LD)$@
+
+
 MOD_TEST_SRC = $(wildcard $(FSV_SRCDIR)/test/*.c)
 MOD_TEST_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_TEST_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/test/%.c
 	$(C)  $(CFLAGS)  $<  $(O)$@
-test.$(SO): $(MOD_TEST_OBJ) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o $(MOD_TEST_OBJ) $(LDFLAGS) $(MOD_TEST_LDFLAGS)  $(O_LD)$@
+test.$(SO): $(MOD_TEST_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(FF_OBJ_DIR)/fftest.o
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o $(MOD_TEST_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_TEST_LDFLAGS)  $(O_LD)$@
+
+
+preinstall: all
+	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin \
+		$(RUNDIR)/www
+	$(CP) ../conf/* $(RUNDIR)/conf/
+	$(CP) *.$(SO) $(RUNDIR)/mod/
+	$(CP) $(ZDLL) $(RUNDIR)/mod/$(LIBZSO)
+
+# http
+	$(CP) ../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
+	$(CP) $(FSV_SRCDIR)/http/status.html $(FSV_SRCDIR)/http/index.html $(RUNDIR)/www/
+	$(CP) $(FSV_SRCDIR)/http/dir_index.html $(FSV_SRCDIR)/http/error.html $(FSV_SRCDIR)/http/mime.conf $(FSV_SRCDIR)/http/static.conf $(RUNDIR)/conf/
+
+clean:
+	rm -vf \
+		$(FSV_BIN) $(MOD_ALL) test.$(SO) \
+		$(FSV_EXOBJS) *.o
+	rm -vfr $(FF_OBJ) $(FF_OBJ_DIR)
+
+distclean: clean
+	rm -vfr $(RUNDIR) ../fserv-*.zip ../fserv-*.tar.xz
+
+$(FF_OBJ_DIR):
+	mkdir $(FF_OBJ_DIR)

@@ -10,7 +10,6 @@ Copyright (c) 2014 Simon Zolin
 
 
 #define FSV_FULLNAME "fserv " FSV_VER " beta"
-#define FSV_SITE "http://server.firmdev.com/"
 
 typedef struct cmdline {
 	ffstr conf_fn;
@@ -82,7 +81,7 @@ static int conf_ver(ffparser_schem *ps, void *obj)
 static int conf_help(ffparser_schem *ps, void *obj)
 {
 	fffile_write(ffstdout, FFSTR(
-FSV_FULLNAME ". <" FSV_SITE ">" N
+FSV_FULLNAME N
 "Usage: fserv [-hvd] [-c CONF] [-s CMD]" N
 N
 "Options:" N

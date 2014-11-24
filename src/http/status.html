@@ -1,0 +1,106 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Status</title>
+<style>
+body{font-family:verdana,tahoma,arial;font-size:9pt;}
+th{padding:5px;background:#e8e8e8;}
+td{padding:5px;border:solid 1px silver;}
+tr:hover td{background:#f8f8f8;border:solid 1px #b0b0b0;}
+span.up{color:green;}
+span.down{color:red;}
+span.still{color:blue;}
+</style>
+</head>
+
+<body>
+<h1>Status</h1>
+<div id="area">Updating...</div>
+<hr/>
+<i>fserv</i>
+</body>
+
+<script>
+var request = new XMLHttpRequest;
+var area = document.getElementById("area");
+var refresh_interval = 1000;
+var status_url = "/!status";
+var tmr = null;
+var last_obj = null;
+
+function handler()
+{
+	if (request.readyState == 4 && request.status == 200) {
+		area_update();
+		tmr = setTimeout(send_req, refresh_interval);
+	}
+}
+
+function send_req()
+{
+	if (tmr != null) {
+		clearTimeout(tmr);
+		tmr = null;
+	}
+	request.onreadystatechange = handler;
+	request.open("GET", status_url);
+	request.send();
+}
+
+function printval(newval, oldval)
+{
+	var sp = "still";
+	if (oldval != null && newval != oldval) {
+		sp = (typeof(newval) != "number" || newval > oldval) ? "up" : "down";
+	}
+	return "<span class='" + sp + "'>" + newval + "</span>";
+}
+
+function getobj()
+{
+	return JSON.parse(request.responseText);
+}
+
+function area_update()
+{
+	var obj = getobj();
+	if (obj == null)
+		return;
+
+	var date = new Date(obj.time * 1000);
+	var out = "<b>Time:</b> " + date.toUTCString();
+
+	for (var imod = 0;  imod < obj.data.length;  imod++) {
+		var mod = obj.data[imod];
+		out += "<h3>" + mod.mod + "</h3>";
+		out += "<table>";
+
+		if (mod.data.length != 0) {
+			out += "<tr>";
+			for (var key in mod.data[0]) {
+				out += "<th>" + key + "</th>";
+			}
+			out += "</tr>";
+		}
+
+		for (var ictx = 0;  ictx < mod.data.length;  ictx++) {
+			var ctx = mod.data[ictx];
+			out += "<tr>";
+			for (var key in ctx) {
+				var lastval = (last_obj != null) ? last_obj.data[imod].data[ictx][key] : null;
+				out += "<td>" + printval(ctx[key], lastval) + "</td>";
+			}
+			out += "</tr>";
+		}
+
+		out += "</table>";
+	}
+
+	area.innerHTML = out;
+	last_obj = obj;
+}
+
+send_req();
+</script>
+
+</html>

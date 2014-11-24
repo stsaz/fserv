@@ -12,7 +12,7 @@ Copyright 2014 Simon Zolin.
 #include <FF/sendfile.h>
 
 
-#define FSV_VER "0.17"
+#define FSV_VER "0.18"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;
@@ -23,6 +23,7 @@ typedef struct fsv_cache fsv_cache;
 typedef struct fsv_listen fsv_listen;
 typedef struct fsv_connect fsv_connect;
 typedef struct fsv_resolver fsv_resolver;
+typedef struct fsv_status fsv_status;
 
 /** Get module interface by name.
 A module implements the function fsv_getmod() and exports it.
@@ -73,6 +74,7 @@ typedef struct fsvcore_config {
 	const char *root; //server root path
 	fsv_logctx *logctx; //global log
 	fffd queue;
+	uint pagesize;
 } fsvcore_config;
 
 enum FSVCORE_TASK {
@@ -102,9 +104,9 @@ struct fsv_core {
 	/** Return -1 on error. */
 	ssize_t (*getvar)(const char *name, size_t namelen, void *dst, size_t cap);
 
-	/** Process dynamic variables.
-	Return 0 on success.  Free @dst with ffstr_free(). */
-	int (*process_vars)(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx);
+	/** Process dynamic variables.  @dst is reused.
+	Return 0 on success.  Free @dst with ffarr_free(). */
+	int (*process_vars)(ffstr3 *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx);
 
 	/** Get current time.
 	@dt, @dst: optional.
@@ -328,6 +330,7 @@ enum FSV_LISN_OPT {
 
 struct fsv_listen {
 	fsv_lsnctx * (*newctx)(ffpars_ctx *a, const fsv_listen_cb *h, void *userctx);
+	fsv_lsnctx * (*findctx)(const char *name, size_t len);
 
 	ssize_t (*getvar)(fsv_lsncon *conn, const char *name, size_t namelen, void *dst, size_t cap);
 
@@ -425,3 +428,13 @@ struct fsv_resolver {
 
 	void (*unref)(const ffaddrinfo *ai);
 };
+
+/* ====================================================================== */
+
+struct fsv_status {
+	int (*setdata)(const char *s, size_t len, int flags);
+};
+
+typedef struct fsv_status_handler {
+	void (*get)(const fsv_status *statusmod);
+} fsv_status_handler;

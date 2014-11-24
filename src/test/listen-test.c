@@ -259,6 +259,11 @@ int test_listen(tester *t)
 	fffd f;
 	size_t i;
 
+	if (t->lsnctx == NULL) {
+		testm_runnext(t);
+		return 0;
+	}
+
 	FFTEST_FUNC;
 
 	x(NULL != ffarr_alloc(&t->inbuf, BUFSIZE * 3));

@@ -2,15 +2,76 @@
 Copyright 2014 Simon Zolin
 */
 
-#include "srv.h"
-#include <FFOS/dir.h>
+#include <core/fserv.h>
+#include <FF/timer-queue.h>
+#include <FF/time.h>
 #include <FF/path.h>
 #include <FF/filemap.h>
 #include <FF/conf.h>
+#include <FFOS/process.h>
+#include <FFOS/sig.h>
+#include <FFOS/atomic.h>
+#include <FFOS/dir.h>
 
 #ifdef FF_UNIX
 #include <sys/resource.h> //setrlimit
 #endif
+
+
+enum TM_E {
+	TM_YMD = 1
+	, TM_WDMY = 2
+	, TM_YMD_LOCAL = 4
+	, TM_MSEC = 1 << 31
+};
+
+typedef struct curtime_t {
+	fftime time;
+	ffdtm dt
+		, dt_lo;
+	char ymd[32]; // yyyy-MM-dd...
+	char wdmy[32]; // Wed, 07 Sep...
+	char ymd_lo[32]; // yyyy-MM-dd...
+	uint flags; //enum TM_E
+} curtime_t;
+
+
+typedef struct fmodule {
+	fsv_modinfo mod;
+	fflist_item sib;
+	char name[1];
+} fmodule;
+
+/** Manages configuration, modules, timer, signals and event loop. */
+typedef struct fserver {
+	fffd kq;
+	ffkqu_time quTm;
+	const ffkqu_time *pquTm;
+
+	fsv_timer tmr;
+	fftimer_queue tmrqu;
+	curtime_t time;
+
+	fftaskmgr taskmgr;
+	ffaio_task sigs_task;
+
+	int state;
+	fflist mods;
+	ffstr3 errstk;
+
+	fsv_logctx *logctx;
+	struct _fsv_logctx logctx_empty;
+
+	fsvcore_config cfg;
+	union {
+		ffstr pid_fn;
+		ffstr pid_fn_conf;
+	};
+	ffstr rootdir; ///< e.g. "/path/path2/"
+	ushort events_count;
+	ushort timer_resol; //in ms
+	uint page_size;
+} fserver;
 
 
 #define dbglog(level, ...) \
@@ -21,6 +82,9 @@ Copyright 2014 Simon Zolin
 
 #define syserrlog(level, fmt, ...) \
 	fsv_syserrlog(serv->logctx, level, "FSRV", NULL, fmt, __VA_ARGS__)
+
+#define dbglog2(logctx, level, ...) \
+	fsv_dbglog(logctx, level, "FSRV", NULL, __VA_ARGS__)
 
 #define errlog2(logctx, level, ...) \
 	fsv_errlog(logctx, level, "FSRV", NULL, __VA_ARGS__)
@@ -48,7 +112,7 @@ static ssize_t srv_getpath(char *dst, size_t dstsz, const char *path, size_t len
 static fftime srv_gettime4(ffdtm *dt, char *dst, size_t cap, uint flags);
 static const fsv_modinfo * srv_findmod(const char *name, size_t namelen);
 static ssize_t srv_getvar(const char *name, size_t namelen, void *dst, size_t cap);
-static int srv_process_vars(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx);
+static int srv_process_vars(ffstr3 *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx);
 static void srv_timer(fsv_timer *tmr, int64 interval_ms, fftmrq_handler func, void *param);
 static int srv_usertask(fsv_task *task, int op);
 static const fsv_core srvcore = {
@@ -108,10 +172,13 @@ static void * srv_create(void)
 	fftmrq_init(&serv->tmrqu);
 	serv->events_count = 64;
 	serv->timer_resol = 250;
+	fftime_now(&serv->time.time);
+
 	{
 		ffsysconf sc;
 		ffsc_init(&sc);
-		serv->page_size = ffsc_get(&sc, _SC_PAGESIZE);
+		serv->cfg.pagesize = ffsc_get(&sc, _SC_PAGESIZE);
+		_ffsc_ncpu = ffsc_get(&sc, _SC_NPROCESSORS_ONLN);
 	}
 
 	serv->logctx_empty.level = 0; //no log levels
@@ -551,12 +618,13 @@ static ssize_t srv_getvar(const char *name, size_t namelen, void *dst, size_t ca
 	return 0;
 }
 
-static int srv_process_vars(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx)
+static int srv_process_vars(ffstr3 *dst, const ffstr *src, fsv_getvar_t getvar, void *udata, fsv_logctx *logctx)
 {
-	ffstr3 s = {0};
 	ffstr sname, sval;
 	const char *p = src->ptr
 		, *end = src->ptr + src->len;
+
+	dst->len = 0;
 
 	while (p != end) {
 
@@ -564,6 +632,12 @@ static int srv_process_vars(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, v
 			sval.ptr = (char*)p;
 			p = ffs_find(p, end - p, '$');
 			sval.len = p - sval.ptr;
+
+			if (sval.len == src->len) {
+				ffarr_free(dst);
+				ffstr_set2(dst, src);
+				return 0;
+			}
 
 		} else {
 
@@ -577,20 +651,19 @@ static int srv_process_vars(ffstr *dst, const ffstr *src, fsv_getvar_t getvar, v
 
 			sval.len = getvar(udata, sname.ptr, sname.len, &sval.ptr, 0);
 			if (sval.len == -1) {
-				errlog2(logctx, FSV_LOG_ERR, "srv_process_vars(): unknown variable: $%S", &sname);
-				return 2;
+				dbglog2(logctx, FSV_LOG_DBGFLOW, "srv_process_vars(): unknown variable: $%S", &sname);
+				continue;
 			}
 		}
 
-		if (NULL == ffarr_grow(&s, sval.len, FFARR_GROWQUARTER)) {
+		if (NULL == ffarr_grow(dst, sval.len, FFARR_GROWQUARTER)) {
 			errlog2(logctx, FSV_LOG_ERR, "srv_process_vars(): %e: by %L bytes"
 				, FFERR_BUFGROW, sval.len);
 			return 1;
 		}
-		ffstr3_cat(&s, sval.ptr, sval.len);
+		ffstr3_cat(dst, sval.ptr, sval.len);
 	}
 
-	ffstr_acqstr3(dst, &s);
 	return 0;
 }
 
@@ -777,7 +850,7 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 	}
 
 	fffile_mapinit(&fm);
-	fffile_mapset(&fm, serv->page_size, fd, 0, fffile_size(fd));
+	fffile_mapset(&fm, serv->cfg.pagesize, fd, 0, fffile_size(fd));
 
 	for (;;) {
 		if (0 != fffile_mapbuf(&fm, &mp)) {
@@ -838,9 +911,11 @@ err:
 	if (ffpars_iserr(r)) {
 		const char *ser = ffpars_schemerrstr(ps, r, NULL, 0);
 		srv_errsave(r == FFPARS_ESYS ? fferr_last() : -1
-			, "parse config: %s: %u:%u: near \"%S\": %s"
+			, "parse config: %s: %u:%u: near \"%S\": \"%s\": %s"
 			, filename
-			, (int)ps->p->line, (int)ps->p->ch, &ps->p->val, ser);
+			, (int)ps->p->line, (int)ps->p->ch
+			, &ps->p->val, (ps->curarg != NULL) ? ps->curarg->name : ""
+			, ser);
 		goto fail;
 	}
 

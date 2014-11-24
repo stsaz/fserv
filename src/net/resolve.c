@@ -8,7 +8,6 @@ Copyright 2014 Simon Zolin.
 #include <FF/crc.h>
 #include <FF/net/url.h>
 #include <FF/net/dns.h>
-#include <FFOS/io.h>
 #include <FFOS/socket.h>
 #include <FFOS/error.h>
 #include <FFOS/random.h>
@@ -130,6 +129,12 @@ static int resv_resolve(fsv_resolv_ctx *r, const char *name, size_t len, fsv_res
 static void resv_unref(const ffaddrinfo *ai);
 static const fsv_resolver fsv_resolv_iface = {
 	&resv_newctx, &resv_resolve, &resv_unref
+};
+
+// STATUS
+static void resv_status(const fsv_status *statusmod);
+static const fsv_status_handler resv_stat_iface = {
+	&resv_status
 };
 
 // CONF
@@ -318,7 +323,36 @@ static const void * resvm_iface(const char *name)
 {
 	if (0 == ffsz_cmp(name, "resolve"))
 		return &fsv_resolv_iface;
+	else if (0 == ffsz_cmp(name, "json-status"))
+		return &resv_stat_iface;
 	return NULL;
+}
+
+static const int resvm_status_json_meta[] = {
+	FFJSON_TOBJ
+	, FFJSON_FKEYNAME, FFJSON_TSTR
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_TOBJ
+};
+
+static void resv_status(const fsv_status *statusmod)
+{
+	dns_serv *serv;
+	ffjson_cook status_json;
+	char buf[4096];
+	ffjson_cookinit(&status_json, buf, sizeof(buf));
+
+	FFLIST_WALK(&resvm->servs, serv, sib) {
+		ffjson_addv(&status_json, resvm_status_json_meta, FFCNT(resvm_status_json_meta)
+			, FFJSON_CTXOPEN
+			, "server", &serv->saddr
+			, "queries", (int64)serv->nqueries
+			, FFJSON_CTXCLOSE
+			, NULL);
+	}
+
+	statusmod->setdata(status_json.buf.ptr, status_json.buf.len, 0);
+	ffjson_cookfin(&status_json);
 }
 
 
@@ -1119,7 +1153,7 @@ static void resv_cacheresp(dns_query *q)
 		ca.data = (char*)&res;
 		ca.datalen = sizeof(dns_res*);
 		ca.refs = (uint)q->users.len;
-		ca.expire = q->ttl[i];
+		ca.expire = (uint)ffmin(q->ttl[0], q->ttl[q->nres - 1]);
 
 		if (0 == resvm->cachmod->store(resvm->cachctx, &ca, 0)) {
 			res->cached_id = ca.id;

@@ -12,6 +12,7 @@ struct tester {
 	const fsv_core *srv;
 	fsv_logctx *logctx;
 	const test_func_t *curfunc;
+	uint server_stop;
 
 	const fsv_cache *cachmod;
 	fsv_cachectx *cachctx;
@@ -57,3 +58,6 @@ extern int testm_conf_resolve(ffparser_schem *ps, tester *t, ffpars_ctx *a);
 extern int test_listen(tester *t);
 extern int testm_conf_server(ffparser_schem *ps, tester *t, ffpars_ctx *a);
 extern int testm_conf_client(ffparser_schem *ps, tester *t, ffpars_ctx *a);
+
+extern int test_http(tester *t);
+extern int testm_conf_http(ffparser_schem *ps, tester *t, ffpars_ctx *ctx);

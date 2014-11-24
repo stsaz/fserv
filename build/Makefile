@@ -16,6 +16,8 @@ FFOS_OBJ_DIR = ./ff-obj
 FF = ../../ff
 FF_OBJ_DIR = $(FFOS_OBJ_DIR)
 ZLIB = $(FF)/3pt/z/libz-$(OS)$(ARCH).so.1.2.8
+ZDLL = $(ZLIB)
+LIBZSO = libz.so.1
 
 CP = cp -u -v -p
 PACK = tar --owner=0 --group=0 --numeric-owner -cJv
@@ -47,16 +49,13 @@ include ./makerules
 strip-debug: all
 	sh strip-debug.sh $(FSV_BIN) $(MOD_ALL)
 
-install: all
-	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin
-	$(CP) ../conf/*.conf $(RUNDIR)/conf/
+install: all preinstall
 	$(CP) fserv-exec-unix $(RUNDIR)/sbin/fserv
 	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/$(FSV_BIN)-bin
-	$(CP) *.so $(RUNDIR)/mod/
-	$(CP) $(ZLIB) $(RUNDIR)/mod/libz.so.1
+	$(CP) $(FSV_SRCDIR)/../README.txt $(RUNDIR)/README
 
 	chmod 755 $(RUNDIR)/sbin/fserv $(RUNDIR)/sbin/$(FSV_BIN)-bin
-	chmod 644 $(RUNDIR)/mod/*.so
+	chmod 644 $(RUNDIR)/mod/*.$(SO)
 
 package: all install
 	mv $(RUNDIR) ../fserv

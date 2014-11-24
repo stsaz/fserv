@@ -93,6 +93,12 @@ static const fsv_cache fsv_cach_iface = {
 	&cach_newctx, &cach_fetch, &cach_store, &cach_update, &cach_unref
 };
 
+// STATUS
+static void cach_status(const fsv_status *statusmod);
+static const fsv_status_handler cach_stat_iface = {
+	&cach_status
+};
+
 static void cachm_clear(void);
 static const char * cach_errstr(int code);
 
@@ -118,13 +124,12 @@ static cach_key * cach_key_alloc(const char *key, size_t len, int key_icase);
 static ffbool cach_key_equal(const cach_key *ckey, const char *key, size_t len, int key_icase);
 
 
-#ifdef FF_WIN
-BOOL DllMain(HMODULE p1, DWORD p2, void *p3)
+static void oninit(void)
 {
 	ffos_init();
-	return 1;
 }
-#endif
+FFDL_ONINIT(oninit, NULL)
+
 
 FF_EXTN FF_EXP const fsv_mod * fsv_getmod(const char *name)
 {
@@ -220,6 +225,8 @@ static const void * cachm_iface(const char *name)
 {
 	if (0 == ffsz_cmp(name, "cache"))
 		return &fsv_cach_iface;
+	else if (0 == ffsz_cmp(name, "json-status"))
+		return &cach_stat_iface;
 	return NULL;
 }
 
@@ -237,6 +244,40 @@ static void cachm_clear(void)
 		ffrbtl_enumsafe(&cx->items, &cach_onclear, NULL, FFOFF(cach_item, rbtnod));
 	}
 }
+
+static const int cach_status_jsonmeta[] = {
+	FFJSON_TOBJ
+	, FFJSON_FKEYNAME, FFJSON_FSTRZ
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_TOBJ
+};
+
+static void cach_status(const fsv_status *statusmod)
+{
+	const cachectx *cx;
+	ffjson_cook status_json;
+	char buf[4096];
+	ffjson_cookinit(&status_json, buf, sizeof(buf));
+
+	FFLIST_WALK(&cachm->ctxs, cx, sib) {
+		ffjson_addv(&status_json, cach_status_jsonmeta, FFCNT(cach_status_jsonmeta)
+			, FFJSON_CTXOPEN
+			, "id", cx->sname
+			, "items", (int64)cx->items.len
+			, "hits", (int64)cx->hits
+			, "misses", (int64)cx->misses
+			, "memory", (int64)cx->memsize
+			, FFJSON_CTXCLOSE
+			, NULL);
+	}
+
+	statusmod->setdata(status_json.buf.ptr, status_json.buf.len, 0);
+	ffjson_cookfin(&status_json);
+}
+
 
 static fsv_cachectx * cach_newctx(ffpars_ctx *a, const fsv_cach_cb *cb, int flags)
 {
@@ -372,7 +413,7 @@ static int cach_fetch(fsv_cachectx *fcx, fsv_cacheitem *ca, int flags)
 		}
 
 		cit = (cach_item*)ca->id;
-		if (cit->rbtnod.sib.next == NULL) {
+		if (cit->rbtnod.sib.next == &cit->rbtnod.sib) {
 			fsv_dbglog(logctx, FSV_LOG_DBGFLOW, CACH_MODNAME, &cx->name
 				, "fetch next: \"%*s\": %s"
 				, cit->ckey->len, cit->ckey->d, cach_errstr(FSV_CACH_ENOTFOUND));

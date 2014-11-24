@@ -6,6 +6,7 @@ Copyright (c) 2014 Simon Zolin
 
 #include <core/fserv.h>
 #include <FFOS/file.h>
+#include <FFOS/atomic.h>
 #include <FF/list.h>
 
 
@@ -41,6 +42,10 @@ typedef struct logmodule {
 	fflist ctxs;
 	fsv_timer flush_timer;
 	char pid[FFINT_MAXCHARS];
+
+	//status:
+	ffatomic stat_written;
+	ffatomic stat_messages;
 } logmodule;
 
 FF_EXTN logmodule *logm;

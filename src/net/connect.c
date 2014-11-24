@@ -82,6 +82,7 @@ struct fsv_conn {
 		, ipv4 :1
 		, ipv6 :1
 		, second_ai :1 //if set, 'cur_ai' points to an element in the list 'ai[1]'
+		, isactive :1
 		;
 };
 
@@ -126,6 +127,12 @@ static const fsv_connect fsv_conn_iface = {
 	&conn_newctx, &conn_getvar
 	, &conn_getserv, &conn_connect, &conn_disconnect
 	, &conn_recv, &conn_send, &conn_sendfile, &conn_cancelio
+};
+
+// STATUS
+static void conn_status(const fsv_status *statusmod);
+static const fsv_status_handler conn_stat_iface = {
+	&conn_status
 };
 
 // CONF
@@ -286,6 +293,8 @@ static const void * conm_iface(const char *name)
 {
 	if (0 == ffsz_cmp(name, "connect"))
 		return &fsv_conn_iface;
+	else if (0 == ffsz_cmp(name, "json-status"))
+		return &conn_stat_iface;
 	return NULL;
 }
 
@@ -327,8 +336,9 @@ static void conx_fin(fsv_conctx *cx)
 
 static void conm_destroy(void)
 {
-	FFLIST_ENUMSAFE(&conm->ctxs, conx_fin, fsv_conctx, sib);
+	fsv_logctx_get(conm->logctx)->level = 0;
 	FFLIST_ENUMSAFE(&conm->cons, conn_recycle, fsv_conn, sib);
+	FFLIST_ENUMSAFE(&conm->ctxs, conx_fin, fsv_conctx, sib);
 	FFLIST_ENUMSAFE(&conm->recycled_cons, conn_fin, fsv_conn, sib);
 	ffmem_free(conm);
 	conm = NULL;
@@ -343,6 +353,36 @@ static int conm_sig(int sig)
 	}
 	return 0;
 }
+
+static const int conm_status_json_meta[] = {
+	FFJSON_TOBJ
+	, FFJSON_FKEYNAME, FFJSON_TSTR
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_TOBJ
+};
+
+static void conn_status(const fsv_status *statusmod)
+{
+	const fsv_conctx *cx;
+	ffjson_cook status_json;
+	char buf[4096];
+	ffjson_cookinit(&status_json, buf, sizeof(buf));
+
+	FFLIST_WALK(&conm->ctxs, cx, sib) {
+		ffjson_addv(&status_json, conm_status_json_meta, FFCNT(conm_status_json_meta)
+			, FFJSON_CTXOPEN
+			, "id", &FF_GETPTR(conn_serv, sib, cx->upstm.first)->surl
+			, "connected", (int64)cx->connected
+			, "active", (int64)cx->active
+			, FFJSON_CTXCLOSE
+			, NULL);
+	}
+
+	statusmod->setdata(status_json.buf.ptr, status_json.buf.len, 0);
+	ffjson_cookfin(&status_json);
+}
+
 
 static fsv_conctx * conn_newctx(ffpars_ctx *a, const fsv_connect_cb *cb)
 {
@@ -375,6 +415,7 @@ static ssize_t conn_getvar(fsv_conn *c, const char *name, size_t namelen, void *
 
 static void conn_resettimer(fsv_conn *c, uint t)
 {
+	dbglog(c->logctx, FSV_LOG_DBGNET, "timer set: %us", t);
 	conm->core->timer(&c->tmr, -(int64)t * 1000, &conn_onexpire, c);
 }
 
@@ -409,9 +450,8 @@ static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags)
 	fsv_conn *c;
 	fsv_logctx *logctx = ((nc->logctx != NULL) ? nc->logctx : conm->logctx);
 	conn_serv *cs, *firstserv;
-	ffstr surl = {0};
-	ffbool dynamic_url = 0
-		, dynamic_host = 0;
+	ffstr3 surl = {0};
+	ffbool dynamic_host = 0;
 	int er;
 	uint port;
 	ffstr host;
@@ -421,7 +461,7 @@ static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags)
 		// get the next server
 		cs = conx_getserv(cx, nc->con->curserv, nc->con->firstserv, logctx);
 		firstserv = nc->con->firstserv;
-		conn_recycle(nc->con);
+		conn_disconnect(nc->con, 0);
 		nc->con = NULL;
 
 	} else {
@@ -436,7 +476,7 @@ static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags)
 
 	// get URL
 	if (!cs->dynamic_url) {
-		surl = cs->surl;
+		ffarr_set(&surl, cs->surl.ptr, cs->surl.len);
 		u = cs->parsed_url;
 
 	} else {
@@ -445,7 +485,7 @@ static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags)
 			er = FSV_CONN_ESYS;
 			goto fail;
 		}
-		dynamic_url = 1;
+		FF_ASSERT(surl.cap != 0);
 
 		er = ffurl_parse(&u, surl.ptr, surl.len);
 		if (er != 0) {
@@ -499,8 +539,8 @@ static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags)
 	c->firstserv = firstserv;
 	c->curserv = cs;
 
-	ffstr_acq(&c->surl, &surl);
-	c->dynamic_url = dynamic_url;
+	ffstr_acqstr3(&c->surl, &surl);
+	c->dynamic_url = cs->dynamic_url;
 
 	ffstr_acq(&c->host, &host);
 	c->dynamic_host = dynamic_host;
@@ -516,8 +556,7 @@ static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags)
 	return FSV_CONN_OK;
 
 fail:
-	if (dynamic_url)
-		ffstr_free(&surl);
+	ffarr_free(&surl);
 	if (dynamic_host)
 		ffstr_free(&host);
 
@@ -589,7 +628,6 @@ static void conn_connect(fsv_conn *c, int flags)
 
 	if (c->sk != FF_BADSKT) {
 		// the connection was taken from keep-alive cache
-		c->cx->active++;
 		conn_notify(c, FSV_CONN_OK);
 		return;
 	}
@@ -726,6 +764,11 @@ fail:
 /** Notify parent module. */
 static void conn_notify(fsv_conn *c, int result)
 {
+	if (result == FSV_CONN_OK) {
+		c->isactive = 1;
+		c->cx->active++;
+	}
+
 	conn_freeaddr(c);
 	c->cx->cb->onconnect(c->userptr, result);
 }
@@ -760,11 +803,12 @@ static void conn_onconnect(void *udata)
 		return;
 	}
 
-	dbglog(c->logctx, FSV_LOG_DBGNET, "%S: connected (socket %L)", &c->host, (size_t)c->sk);
+	dbglog(c->logctx, FSV_LOG_DBGNET, "%S: connected (socket %L)  [%L]"
+		, &c->host, (size_t)c->sk, conm->cons.len + 1);
 
+	conn_freeaddr(c);
 	fflist_ins(&conm->cons, &c->sib);
 	c->cx->connected++;
-	c->cx->active++;
 	conn_notify(c, FSV_CONN_OK);
 }
 
@@ -775,6 +819,8 @@ static void conn_recycle(fsv_conn *c)
 		ffskt_close(c->sk);
 		c->sk = FF_BADSKT;
 		c->cx->connected--;
+		dbglog(conm->logctx, FSV_LOG_DBGNET, "%S: disconnected  [%L]"
+			, &c->host, conm->cons.len - 1);
 		fflist_rm(&conm->cons, &c->sib);
 	}
 
@@ -796,13 +842,18 @@ static void conn_recycle(fsv_conn *c)
 static void conn_oncancel(void *udata)
 {
 	fsv_conn *c = udata;
-	conn_freeaddr(c);
 	conn_recycle(c);
+}
+
+static void conn_oncancel2(void *udata)
+{
+	conn_disconnect(udata, 0);
 }
 
 static int conn_disconnect(fsv_conn *c, int flags)
 {
-	conm->core->fsv_timerstop(&c->tmr);
+	if (c->logctx != conm->logctx)
+		c->logctx = conm->logctx;
 
 	switch (c->status) {
 
@@ -812,6 +863,10 @@ static int conn_disconnect(fsv_conn *c, int flags)
 		return 0;
 
 	case ST_CONNECTING:
+		conm->core->fsv_timerstop(&c->tmr);
+		conn_freeaddr(c);
+		ffskt_close(c->sk);
+		c->sk = FF_BADSKT;
 		ffaio_cancelasync(&c->aiotask, FFAIO_CONNECT, &conn_oncancel);
 		return 0;
 
@@ -819,18 +874,22 @@ static int conn_disconnect(fsv_conn *c, int flags)
 		break;
 
 	default:
+		FF_ASSERT(0);
 		return -1;
 	}
 
 	if (c->sk != FF_BADSKT) {
+
+		if (FSV_IO_ASYNC == conn_cancelio(c, FFAIO_RW, &conn_oncancel2, c))
+			return 0; //wait until async operations on both channels are completed
+
+		c->isactive = 0;
 		c->cx->active--;
 
 		if ((flags & FSV_CONN_KEEPALIVE) && c->cx->cachctx != NULL) {
 			conn_store_keepalive(c);
 			return 0;
 		}
-
-		dbglog(c->logctx, FSV_LOG_DBGNET, "%S: disconnected", &c->host);
 	}
 
 	conn_recycle(c);
@@ -1035,6 +1094,8 @@ static fsv_conn * conn_find_keepalive(fsv_conctx *cx, const ffstr *host, fsv_log
 		c->status = ST_NONE;
 		FF_ASSERT(c->kalive_id == ca.id);
 		c->cx->cachmod->unref(&ca, FSV_CACH_UNLINK);
+		ca.id = NULL;
+		ca.refs = 1;
 		c->kalive_id = NULL;
 
 #ifdef FF_UNIX

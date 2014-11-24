@@ -37,6 +37,7 @@ typedef struct lisnctx {
 	unsigned queued :1;
 
 	//conf:
+	uint max_cons;
 	uint backlog;
 	ffstr saddr;
 	ffaddr addr;
@@ -91,6 +92,7 @@ const fsv_mod fsv_lsn_mod = {
 
 // FSERV LISTENER
 static fsv_lsnctx * lsn_newctx(ffpars_ctx *a, const fsv_listen_cb *cb, void *userctx);
+static fsv_lsnctx * lsn_findctx(const char *name, size_t len);
 static ssize_t lsn_getvar(fsv_lsncon *c, const char *name, size_t namelen, void *dst, size_t cap);
 static void lsn_closecon(fsv_lsncon *c, int flags);
 static ssize_t lsn_recv(fsv_lsncon *c, void *buf, size_t size, ffaio_handler handler, void *udata);
@@ -99,8 +101,14 @@ static ssize_t lsn_sendfile(fsv_lsncon *c, ffsf *sf, ffaio_handler handler, void
 static int lsn_cancel(fsv_lsncon *c, int op, ffaio_handler handler, void *udata);
 static int lsn_setopt(fsv_lsncon *c, int opt, void *data);
 static const fsv_listen fsv_lsn_iface = {
-	&lsn_newctx, &lsn_getvar, &lsn_setopt
+	&lsn_newctx, &lsn_findctx, &lsn_getvar, &lsn_setopt
 	, &lsn_closecon, &lsn_recv, &lsn_send, &lsn_sendfile, &lsn_cancel
+};
+
+// STATUS
+static void lisn_status(const fsv_status *statusmod);
+static const fsv_status_handler lisn_stat_iface = {
+	&lisn_status
 };
 
 // CONF
@@ -135,6 +143,7 @@ static const ffpars_arg lsnm_conf_args[] = {
 static const ffpars_arg lsnx_conf_args[] = {
 	{ "listen",  FFPARS_TSTR | FFPARS_FREQUIRED,  FFPARS_DST(&lsnx_conf_listen) }
 	, { "log",  FFPARS_TOBJ,  FFPARS_DST(&lsnx_conf_log) }
+	, { "max_clients",  FFPARS_TINT | FFPARS_FNOTZERO,  FFPARS_DSTOFF(lisnctx, max_cons) }
 	, { "backlog",  FFPARS_TINT,  FFPARS_DSTOFF(lisnctx, backlog) }
 	, { "linger_timeout",  FFPARS_TINT | FFPARS_F16BIT,  FFPARS_DSTOFF(lisnctx, tmout_linger) }
 	, { "tcp_defer_accept",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(lisnctx, defer_accept) }
@@ -262,6 +271,8 @@ static const void * lsnm_iface(const char *name)
 {
 	if (0 == ffsz_cmp(name, "listen"))
 		return &fsv_lsn_iface;
+	else if (0 == ffsz_cmp(name, "json-status"))
+		return &lisn_stat_iface;
 	return NULL;
 }
 
@@ -359,6 +370,35 @@ static int lsnm_stop(void)
 	return 0;
 }
 
+static const int lsn_status_jsonmeta[] = {
+	FFJSON_TOBJ
+	, FFJSON_FKEYNAME, FFJSON_TSTR
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_FKEYNAME, FFJSON_FINTVAL
+	, FFJSON_TOBJ
+};
+
+static void lisn_status(const fsv_status *statusmod)
+{
+	lisnctx *lx;
+	ffjson_cook status_json;
+	char buf[4096];
+	ffjson_cookinit(&status_json, buf, sizeof(buf));
+
+	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+		ffjson_addv(&status_json, lsn_status_jsonmeta, FFCNT(lsn_status_jsonmeta)
+			, FFJSON_CTXOPEN
+			, "listener", &lx->saddr
+			, "connected", (int64)lx->connected
+			, "max-connected", (int64)lx->max_connected
+			, FFJSON_CTXCLOSE
+			, NULL);
+	}
+
+	statusmod->setdata(status_json.buf.ptr, status_json.buf.len, 0);
+	ffjson_cookfin(&status_json);
+}
+
 
 static fsv_lsnctx * lsn_newctx(ffpars_ctx *a, const fsv_listen_cb *cb, void *userctx)
 {
@@ -368,6 +408,7 @@ static fsv_lsnctx * lsn_newctx(ffpars_ctx *a, const fsv_listen_cb *cb, void *use
 	fflist_ins(&lsnm->ctxs, &lx->sib);
 
 	ffaddr_init(&lx->addr);
+	lx->max_cons = lsnm->max_cons;
 	lx->backlog = SOMAXCONN;
 	lx->logctx = lsnm->logctx;
 	lx->tmout_linger = 30;
@@ -380,6 +421,16 @@ static fsv_lsnctx * lsn_newctx(ffpars_ctx *a, const fsv_listen_cb *cb, void *use
 
 	ffpars_setargs(a, lx, lsnx_conf_args, FFCNT(lsnx_conf_args));
 	return (fsv_lsnctx*)lx;
+}
+
+static fsv_lsnctx * lsn_findctx(const char *name, size_t len)
+{
+	lisnctx *lx;
+	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+		if (ffstr_eq(&lx->saddr, name, len))
+			return (fsv_lsnctx*)lx;
+	}
+	return NULL;
 }
 
 /** Read and discard data. */
@@ -416,13 +467,21 @@ static void lsn_onexpire(const fftime *now, void *param)
 	ffaio_cancelasync(&c->aiotask, FFAIO_READ, NULL);
 }
 
+static void lsn_oncancel(void *udata)
+{
+	lsn_closecon(udata, 0);
+}
+
 /** Close connection. */
 static void lsn_closecon(fsv_lsncon *c, int flags)
 {
 	lisnctx *lx = c->lx;
 	c->userptr = NULL;
 
-	if ((flags & FSV_LISN_LINGER) && c->sk != FF_BADSKT) {
+	if (FSV_IO_ASYNC == lsn_cancel(c, FFAIO_RW, &lsn_oncancel, c))
+		return; //wait until async operations on both channels are completed
+
+	if (flags & FSV_LISN_LINGER) {
 
 		if (0 == ffskt_fin(c->sk)) {
 			lx_dbglog(lx, FSV_LOG_DBGNET, "%S: linger", &c->saddr_peer);
@@ -453,6 +512,11 @@ static fsv_lsncon * lsn_getconn(lisnctx *lx)
 {
 	fsv_lsncon *c;
 
+	if (lx->connected == lx->max_cons) {
+		lx_errlog(lx, FSV_LOG_ERR, "reached max_clients limit");
+		return NULL;
+	}
+
 	if (lsnm->recycled_cons.len != 0) {
 		c = FF_GETPTR(fsv_lsncon, sib, lsnm->recycled_cons.last);
 		fflist_rm(&lsnm->recycled_cons, &c->sib);
@@ -460,7 +524,7 @@ static fsv_lsncon * lsn_getconn(lisnctx *lx)
 	}
 
 	if (lsnm->cons.len == lsnm->max_cons) {
-		lx_errlog(lx, FSV_LOG_ERR, "reached max_clients limit");
+		lx_errlog(lx, FSV_LOG_ERR, "reached total max_clients limit");
 		return NULL;
 	}
 
