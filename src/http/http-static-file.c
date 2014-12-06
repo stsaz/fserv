@@ -543,6 +543,8 @@ next_index:
 	o->mime = stfl_findmime(&fn_ext);
 
 	if (stflm->cache != NULL) {
+		ca.key = fn_s;
+		ca.keylen = fnlen;
 		ca.data = (void*)&o;
 		ca.datalen = sizeof(stfl_obj*);
 		ca.id = NULL;

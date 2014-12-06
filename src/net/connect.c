@@ -1079,12 +1079,12 @@ static fsv_conn * conn_find_keepalive(fsv_conctx *cx, const ffstr *host, fsv_log
 	fsv_cacheitem ca;
 	fsv_conn *c;
 
-	fsv_cache_init(&ca);
-	ca.key = host->ptr;
-	ca.keylen = host->len;
-	ca.logctx = logctx;
-
 	for (;;) {
+
+		fsv_cache_init(&ca);
+		ca.key = host->ptr;
+		ca.keylen = host->len;
+		ca.logctx = logctx;
 
 		if (FSV_CACH_OK != cx->cachmod->fetch(cx->cachctx, &ca, FSV_CACH_ACQUIRE))
 			return NULL;
@@ -1094,8 +1094,6 @@ static fsv_conn * conn_find_keepalive(fsv_conctx *cx, const ffstr *host, fsv_log
 		c->status = ST_NONE;
 		FF_ASSERT(c->kalive_id == ca.id);
 		c->cx->cachmod->unref(&ca, FSV_CACH_UNLINK);
-		ca.id = NULL;
-		ca.refs = 1;
 		c->kalive_id = NULL;
 
 #ifdef FF_UNIX

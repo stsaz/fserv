@@ -288,6 +288,7 @@ static int httpm_conf_host(ffparser_schem *ps, httpmodule *hm, ffpars_ctx *args)
 	}
 
 	ffpars_setargs(args, h, hthost_conf_args, FFCNT(hthost_conf_args));
+	args->errfunc = &http_conf_err;
 	return 0;
 }
 
@@ -445,6 +446,7 @@ static int hthost_conf_target_ex(ffparser_schem *ps, httphost *h, ffpars_ctx *ar
 	tgt->ispath = !ffsz_cmp(ps->curarg->name, "path");
 
 	ffpars_setargs(args, tgt, httgt_conf_args, FFCNT(httgt_conf_args));
+	args->errfunc = &http_conf_err;
 	return 0;
 }
 

@@ -58,12 +58,12 @@ test.$(SO): $(MOD_TEST_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(FF_OBJ_DIR)/fftest.o
 preinstall: all
 	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin \
 		$(RUNDIR)/www
-	$(CP) ../conf/* $(RUNDIR)/conf/
+	$(CP) $(FSV_SRCDIR)/../conf/* $(RUNDIR)/conf/
 	$(CP) *.$(SO) $(RUNDIR)/mod/
 	$(CP) $(ZDLL) $(RUNDIR)/mod/$(LIBZSO)
 
 # http
-	$(CP) ../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
+	$(CP) $(FSV_SRCDIR)/../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
 	$(CP) $(FSV_SRCDIR)/http/status.html $(FSV_SRCDIR)/http/index.html $(RUNDIR)/www/
 	$(CP) $(FSV_SRCDIR)/http/dir_index.html $(FSV_SRCDIR)/http/error.html $(FSV_SRCDIR)/http/mime.conf $(FSV_SRCDIR)/http/static.conf $(RUNDIR)/conf/
 

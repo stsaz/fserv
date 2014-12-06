@@ -476,7 +476,11 @@ static void lsn_oncancel(void *udata)
 static void lsn_closecon(fsv_lsncon *c, int flags)
 {
 	lisnctx *lx = c->lx;
-	c->userptr = NULL;
+
+	if (c->userptr != NULL) {
+		c->userptr = NULL;
+		lsn_setopt(c, FSV_LISN_OPT_LOG, lx->logctx);
+	}
 
 	if (FSV_IO_ASYNC == lsn_cancel(c, FFAIO_RW, &lsn_oncancel, c))
 		return; //wait until async operations on both channels are completed

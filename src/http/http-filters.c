@@ -984,7 +984,7 @@ static void http_resphdrs(fsv_httphandler *h)
 	if (!resp->conn_close
 		&& (!c->keep_alive || h->req->h.conn_close
 			|| c->keepalive_cnt++ == httpm->max_keepalive_requests
-			|| (resp->cont_len == -1 && resp->trans_enc.len == 0)))
+			|| (!ffhttp_respnobody(resp->code) && resp->cont_len == -1 && resp->trans_enc.len == 0)))
 		resp->conn_close = 1;
 
 	ffhttp_addihdr(resp, FFHTTP_SERVER, FFSTR("fserv/" FSV_VER));

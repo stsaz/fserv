@@ -112,7 +112,7 @@ static int test_http_recvbody(ffskt sk, ffhttp_response *resp, size_t rresp)
 			, sbody.len, &sbody);
 
 		if (resp->h.cont_len != -1) {
-			x(resp->h.cont_len >= sbody.len);
+			x((uint64)resp->h.cont_len >= sbody.len);
 			resp->h.cont_len -= sbody.len;
 			if (resp->h.cont_len == 0)
 				break;
