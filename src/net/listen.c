@@ -248,7 +248,6 @@ static void lsnx_fin(lisnctx *lx)
 static void lsnm_destroy(void)
 {
 	FFLIST_ENUMSAFE(&lsnm->ctxs, lsnx_fin, lisnctx, sib);
-	FFLIST_ENUMSAFE(&lsnm->cons, lsn_fincon, fsv_lsncon, sib);
 	FFLIST_ENUMSAFE(&lsnm->recycled_cons, lsn_fincon, fsv_lsncon, sib);
 	ffmem_free(lsnm);
 	lsnm = NULL;
@@ -344,11 +343,14 @@ static int lsnm_start(void)
 	return 0;
 }
 
-/** Close listening socket and send signal to all active connections. */
+/** Close the listening sockets.
+UNIX: if a connection is still active, then a higher level module has a memory leak.
+Windows: a connection may be still active while we're waiting for asynchronous cancel callback. */
 static int lsnm_stop(void)
 {
 	lisnctx *lx;
-	fflist_item *li;
+	fflist_item *next;
+	fsv_lsncon *c;
 
 	lsnm->core->fsv_timerstop(&lsnm->queued_cons_timer);
 
@@ -357,16 +359,19 @@ static int lsnm_stop(void)
 		FF_SAFECLOSE(lx->lsk, FF_BADSKT, ffskt_close);
 	}
 
-	for (li = lsnm->cons.first;  li != FFLIST_END;) {
-		fsv_lsncon *c = FF_GETPTR(fsv_lsncon, sib, li);
-		li = li->next;
+	FFLIST_WALKSAFE(&lsnm->cons, c, sib, next) {
 
-		c->aiotask.rhandler = NULL;
-		c->aiotask.whandler = NULL;
-		if (c->userptr != NULL)
-			c->lx->cb->onsig(c, c->userptr, FSV_LISN_SIGSTOP);
+#ifdef FF_WIN
+		if (!ffaio_active(&c->aiotask))
+#endif
+			lx_errlog(c->lx, FSV_LOG_ERR, "module stop: connection with %S is still active"
+				, &c->saddr_peer);
+
+		c->aiotask.whandler = c->aiotask.rhandler = NULL;
+		lsn_closecon(c, 0);
 	}
 
+	FF_ASSERT(lsnm->cons.len == 0);
 	return 0;
 }
 

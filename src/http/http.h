@@ -51,6 +51,7 @@ typedef struct httpmodule {
 	ffhstab ht_hbn; //hostname => httphost*
 
 	http_submod err_hdler;
+	fflist cons; //httpcon[]
 
 	// conf:
 	ushort read_header_tmout
@@ -75,11 +76,6 @@ typedef struct httpmodule {
 
 extern httpmodule *httpm;
 
-typedef struct http_resphdr {
-	ushort len;
-	char data[0];
-} http_resphdr;
-
 struct httphost {
 	fflist_item sib;
 	fsv_logctx *logctx;
@@ -90,7 +86,7 @@ struct httphost {
 	ffstr3 names;
 	ffstr name;
 
-	ffstr resp_hdrs; //http_resphdr[]
+	ffstr resp_hdrs; //ffbstr[]
 
 	struct { FFARR(http_submod) } resp_filters;
 
@@ -127,6 +123,7 @@ struct httptarget {
 };
 
 struct httpcon {
+	fflist_item sib;
 	fsv_logctx *logctx;
 	struct _fsv_logctx lctx;
 	fsv_task rtask;

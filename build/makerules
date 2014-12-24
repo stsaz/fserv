@@ -1,15 +1,16 @@
 include ./FF-makerules
 
 OBJ_DIR = .
-MOD_ALL = log.$(SO) cache.$(SO) net.$(SO) http.$(SO)
+MOD_ALL = log.$(SO) cache.$(SO) net.$(SO) http.$(SO) http-proxy.$(SO)
 FF_ALL_OBJS = $(FFOS_OBJ) $(FF_OBJ)
+FSERV_H = $(FSV_SRCDIR)/core/fserv.h
 
 all: $(FF_OBJ_DIR) $(FSV_BIN) $(MOD_ALL)
 
 
 SOURCES = $(wildcard $(FSV_SRCDIR)/core/*.c)
 FSV_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(SOURCES)))))
-$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/core/%.c
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/core/%.c $(FSERV_H)
 	$(C)  $(CFLAGS) $<  $(O)$@
 $(FSV_BIN): $(FSV_OBJ) $(FF_ALL_OBJS)
 	$(LD)  $(FF_ALL_OBJS) $(FSV_OBJ) $(LDFLAGS) $(FSV_LDFLAGS)  $(O_LD)$@
@@ -17,7 +18,7 @@ $(FSV_BIN): $(FSV_OBJ) $(FF_ALL_OBJS)
 
 MOD_LOG_SRC = $(wildcard $(FSV_SRCDIR)/log/*.c)
 MOD_LOG_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_LOG_SRC)))))
-$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/log/%.c
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/log/%.c $(FSERV_H)
 	$(C)  $(CFLAGS) $<  $(O)$@
 log.$(SO): $(MOD_LOG_OBJ) $(FF_ALL_OBJS)
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_LOG_OBJ) $(LDFLAGS) $(MOD_LOG_LDFLAGS) $(ZLIB)  $(O_LD)$@
@@ -25,7 +26,7 @@ log.$(SO): $(MOD_LOG_OBJ) $(FF_ALL_OBJS)
 
 MOD_CACHE_SRC = $(wildcard $(FSV_SRCDIR)/cache/*.c)
 MOD_CACHE_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_CACHE_SRC)))))
-$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/cache/%.c
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/cache/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  $(O)$@
 cache.$(SO): $(MOD_CACHE_OBJ) $(FF_ALL_OBJS)
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_CACHE_OBJ) $(LDFLAGS) $(MOD_CACHE_LDFLAGS)  $(O_LD)$@
@@ -33,7 +34,7 @@ cache.$(SO): $(MOD_CACHE_OBJ) $(FF_ALL_OBJS)
 
 MOD_NET_SRC = $(wildcard $(FSV_SRCDIR)/net/*.c)
 MOD_NET_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_NET_SRC)))))
-$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/net/%.c
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/net/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  $(O)$@
 net.$(SO): $(MOD_NET_OBJ) $(FF_ALL_OBJS)
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_NET_OBJ) $(LDFLAGS) $(MOD_NET_LDFLAGS)  $(O_LD)$@
@@ -41,15 +42,23 @@ net.$(SO): $(MOD_NET_OBJ) $(FF_ALL_OBJS)
 
 MOD_HTTP_SRC = $(wildcard $(FSV_SRCDIR)/http/*.c)
 MOD_HTTP_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_HTTP_SRC)))))
-$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http/%.c $(wildcard $(FSV_SRCDIR)/http/*.h)
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http/%.c $(wildcard $(FSV_SRCDIR)/http/*.h) $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  $(O)$@
 http.$(SO): $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ)
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_HTTP_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_HTTP_LDFLAGS) $(ZLIB)  $(O_LD)$@
 
 
+MOD_PROXY_SRC = $(wildcard $(FSV_SRCDIR)/http-proxy/*.c)
+MOD_PROXY_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_PROXY_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http-proxy/%.c $(wildcard $(FSV_SRCDIR)/http-proxy/*.h) $(FSERV_H)
+	$(C)  $(CFLAGS)  $<  $(O)$@
+http-proxy.$(SO): $(MOD_PROXY_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ)
+	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(MOD_PROXY_OBJ) $(LDFLAGS) $(MOD_HTTPPROXY_LDFLAGS)  $(O_LD)$@
+
+
 MOD_TEST_SRC = $(wildcard $(FSV_SRCDIR)/test/*.c)
 MOD_TEST_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_TEST_SRC)))))
-$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/test/%.c
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/test/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  $(O)$@
 test.$(SO): $(MOD_TEST_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(FF_OBJ_DIR)/fftest.o
 	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o $(MOD_TEST_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_TEST_LDFLAGS)  $(O_LD)$@
@@ -66,6 +75,8 @@ preinstall: all
 	$(CP) $(FSV_SRCDIR)/../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
 	$(CP) $(FSV_SRCDIR)/http/status.html $(FSV_SRCDIR)/http/index.html $(RUNDIR)/www/
 	$(CP) $(FSV_SRCDIR)/http/dir_index.html $(FSV_SRCDIR)/http/error.html $(FSV_SRCDIR)/http/mime.conf $(FSV_SRCDIR)/http/static.conf $(RUNDIR)/conf/
+
+	$(CP) $(FSV_SRCDIR)/http-proxy/fwdproxy.conf $(FSV_SRCDIR)/http-proxy/revproxy.conf $(RUNDIR)/conf/
 
 clean:
 	rm -vf \

@@ -12,7 +12,7 @@ Copyright 2014 Simon Zolin.
 #include <FF/sendfile.h>
 
 
-#define FSV_VER "0.19"
+#define FSV_VER "0.20"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;
@@ -86,6 +86,9 @@ enum FSVCORE_TASK {
 typedef fftask fsv_task;
 typedef fftmrq_entry fsv_timer;
 typedef ssize_t (*fsv_getvar_t)(void *udata, const char *name, size_t namelen, void *dst, size_t cap);
+
+#define fsv_getvarcz(udata, namecz, dst, cap) \
+	getvar(udata, namecz, FFSLEN(namecz), dst, cap)
 
 struct fsv_core {
 	const fsvcore_config * (*conf)(void);
@@ -171,6 +174,8 @@ enum FSV_LOG_LEV {
 	, FSV_LOG_DBGFLOW = 0x10
 	, FSV_LOG_DBGNET = 0x20
 	, FSV_LOG_DBGMASK = 0xfff0
+
+	, FSV_LOG_ACCESS = 0x10000
 };
 
 struct fsv_log {
@@ -211,6 +216,12 @@ do { \
 do { \
 	if (fsv_log_checkdbglevel(ctx, level)) \
 		fsv_logctx_get(ctx)->mlog->add(ctx, FSV_LOG_DBG | (level), modname, txn, __VA_ARGS__); \
+} while (0)
+
+#define fsv_accesslog(ctx, modname, txn, ...) \
+do { \
+	if (fsv_logctx_get(ctx)->level & FSV_LOG_ACCESS) \
+		fsv_logctx_get(ctx)->mlog->add(ctx, FSV_LOG_ACCESS, modname, txn, __VA_ARGS__); \
 } while (0)
 
 /* ====================================================================== */
@@ -301,9 +312,8 @@ struct fsv_cache {
 typedef struct fsv_lsnctx fsv_lsnctx;
 typedef struct fsv_lsncon fsv_lsncon;
 
-enum FSV_LISN_SIG {
-	FSV_LISN_SIGSTOP
-};
+// enum FSV_LISN_SIG {
+// };
 
 typedef struct fsv_listen_cb {
 	void (*onaccept)(void *userctx, fsv_lsncon *conn);
@@ -387,7 +397,7 @@ typedef struct fsv_conn_new {
 
 struct fsv_connect {
 	fsv_conctx * (*newctx)(ffpars_ctx *a, const fsv_connect_cb *cb);
-	ssize_t (*getvar)(fsv_conn *c, const char *name, size_t namelen, void *dst, size_t cap);
+	ssize_t (*getvar)(void *c, const char *name, size_t namelen, void *dst, size_t cap);
 
 	int (*getserv)(fsv_conctx *cx, fsv_conn_new *nc, int flags);
 

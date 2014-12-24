@@ -160,7 +160,7 @@ static const ffpars_arg hthost_conf_args[] = {
 	, { "linger",  FFPARS_TBOOL,  FFPARS_DSTOFF(httphost, linger) }
 	, { "error_handler",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&hthost_conf_errorhandler) }
 	, { "default_mime_type",  FFPARS_TSTR | FFPARS_FCOPY,  FFPARS_DSTOFF(httphost, def_mime_type) }
-	, { "request_body_buffer",  FFPARS_TSIZE,  FFPARS_DSTOFF(httphost, reqbody_buf_size) }
+	, { "request_body_buffer",  FFPARS_TSIZE | FFPARS_FNOTZERO,  FFPARS_DSTOFF(httphost, reqbody_buf_size) }
 	, { "max_request_body",  FFPARS_TSIZE | FFPARS_F64BIT,  FFPARS_DSTOFF(httphost, max_reqbody) }
 	, { "response_headers",  FFPARS_TOBJ,  FFPARS_DST(&http_conf_resphdrs) }
 	, { "accesslog_info",  FFPARS_TSTR | FFPARS_FCOPY,  FFPARS_DSTOFF(httphost, accesslog_info) }
@@ -464,6 +464,7 @@ static int hthost_conf_targetany(ffparser_schem *ps, httphost *h, ffpars_ctx *ar
 	tgt->logctx = h->logctx;
 	h->anytarget = tgt;
 	ffpars_setargs(args, tgt, httgt_conf_args, FFCNT(httgt_conf_args));
+	args->errfunc = &http_conf_err;
 	return 0;
 }
 
@@ -551,21 +552,8 @@ static int http_conf_resphdrs(ffparser_schem *ps, httphost *h, ffpars_ctx *args)
 
 static int http_conf_resphdr_item(ffparser_schem *ps, httphost *h, const ffstr *val)
 {
-	char *p;
-	http_resphdr *rh;
-
-	p = ffmem_realloc(h->resp_hdrs.ptr, h->resp_hdrs.len + sizeof(http_resphdr) + val->len);
-	if (p == NULL)
+	if (NULL == ffbstr_push(&h->resp_hdrs, val->ptr, val->len))
 		return FFPARS_ESYS;
-
-	h->resp_hdrs.ptr = p;
-	rh = (http_resphdr*)(p + h->resp_hdrs.len);
-	h->resp_hdrs.len += sizeof(http_resphdr) + val->len;
-
-	if (val->len > 0xffff)
-		return FFPARS_EBIGVAL;
-	rh->len = (ushort)val->len;
-	ffmemcpy(rh->data, val->ptr, val->len);
 	return 0;
 }
 
@@ -615,6 +603,7 @@ static int httpm_sig(int sig)
 		break;
 
 	case FSVCORE_SIGSTOP:
+		FFLIST_ENUMSAFE(&httpm->cons, http_close, httpcon, sib);
 		httpm->core->fsv_timerstop(&httpm->status_tmr);
 		break;
 	}
@@ -687,12 +676,15 @@ static void http_onaccept(void *userctx, fsv_lsncon *conn)
 		goto fail;
 	}
 
+	fflist_ins(&httpm->cons, &c->sib);
 	http_prepare(c);
 	http_start(c);
 	return;
 
 fail:
-	httpm->lisn->fin(c->conn, 0);
+	if (c != NULL)
+		ffmem_free(c);
+	httpm->lisn->fin(conn, 0);
 }
 
 static int http_onsig(fsv_lsncon *conn, void *userptr, int sig)
@@ -777,6 +769,7 @@ void http_reset(httpcon *c)
 	c2 = *c;
 
 	ffmem_tzero(c);
+	c->sib = c2.sib;
 	c->start_time = c2.start_time;
 	c->conn = c2.conn;
 	c->defhost = c2.defhost;
@@ -796,6 +789,7 @@ void http_close(httpcon *c)
 {
 	http_chain_fin(c);
 
+	fflist_rm(&httpm->cons, &c->sib);
 	{
 	int f = 0;
 	if (c->host->linger)
@@ -866,7 +860,7 @@ void http_accesslog(httpcon *c)
 
 	(void)httpm->core->process_vars(&addinfo, &c->host->accesslog_info, &http_getvar, c, c->logctx);
 
-	errlog(c->logctx, FSV_LOG_INFO
+	fsv_accesslog(c->logctx, HTTP_MODNAME, &c->sid
 		, "[%u+%U] \"%S\"" //request
 		" [%u+%U] \"%S\"" //response
 		" %S" //additional info

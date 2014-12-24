@@ -866,19 +866,6 @@ static void http_chunked_req_ondone(fsv_httphandler *h)
 }
 
 
-static size_t ffiov_copyhdtr(ffiovec *dst, size_t cap, const sf_hdtr *hdtr)
-{
-	size_t n = 0;
-	int i;
-	for (i = 0; i < hdtr->hdr_cnt && n < cap; i++) {
-		dst[n++] = hdtr->headers[i];
-	}
-	for (i = 0; i < hdtr->trl_cnt && n < cap; i++) {
-		dst[n++] = hdtr->trailers[i];
-	}
-	return n;
-}
-
 /** Use Transfer-Encoding:chunked when sending data. */
 static void http_chunked_resp(fsv_httphandler *h)
 {
@@ -1061,20 +1048,14 @@ static int http_addhdrs_fromconf(httpcon *c, ffhttp_cook *resp)
 {
 	ffstr name, val;
 	ffstr3 tmp = {0};
-	union {
-	char *p;
-	http_resphdr *rh;
-	} u;
 	int res = 0;
+	size_t off = 0;
 
-	u.p = c->host->resp_hdrs.ptr;
-	while (u.p != ffarr_end(&c->host->resp_hdrs)) {
+	for (;;) {
 
-		ffstr_set(&name, u.rh->data, u.rh->len);
-		u.p += sizeof(http_resphdr) + u.rh->len;
-
-		ffstr_set(&val, u.rh->data, u.rh->len);
-		u.p += sizeof(http_resphdr) + u.rh->len;
+		if (0 == ffbstr_next(c->host->resp_hdrs.ptr, c->host->resp_hdrs.len, &off, &name)
+			|| 0 == ffbstr_next(c->host->resp_hdrs.ptr, c->host->resp_hdrs.len, &off, &val))
+			break;
 
 		if (0 != httpm->core->process_vars(&tmp, &val, fsv_http_iface.getvar, c, c->logctx)) {
 			res = 1;

@@ -72,6 +72,7 @@ struct fsv_conn {
 	ffaddrinfo *addrinfo; //for a system resolver
 	const ffaddrinfo *ai[2]; //for module net.resolve
 	const ffaddrinfo *cur_ai;
+	char saddr[FF_MAXIP6];
 
 	fsv_cacheitem_id *kalive_id;
 	conn_serv *curserv
@@ -115,7 +116,7 @@ const fsv_mod fsv_conn_mod = {
 
 // FSERV CONNECT
 static fsv_conctx * conn_newctx(ffpars_ctx *a, const fsv_connect_cb *cb);
-static ssize_t conn_getvar(fsv_conn *c, const char *name, size_t namelen, void *dst, size_t cap);
+static ssize_t conn_getvar(void *obj, const char *name, size_t namelen, void *dst, size_t cap);
 static int conn_getserv(fsv_conctx *cx, fsv_conn_new *nc, int flags);
 static void conn_connect(fsv_conn *c, int flags);
 static int conn_disconnect(fsv_conn *c, int flags);
@@ -149,6 +150,7 @@ static int conn_testcon(fsv_conn *c);
 #ifdef FF_UNIX
 static void conn_onrsig(void *udata);
 #endif
+static void conn_close_keepalive(fsv_conn *c);
 static void conn_store_keepalive(fsv_conn *c);
 static fsv_conn * conn_find_keepalive(fsv_conctx *cx, const ffstr *host, fsv_logctx *logctx);
 static int conn_cach_cb(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
@@ -176,6 +178,7 @@ static void conn_notify(fsv_conn *c, int result);
 static void conn_recycle(fsv_conn *c);
 static void conn_fin(fsv_conn *c);
 static void conn_oncancel(void *udata);
+static void conn_stop(fsv_conn *c);
 
 
 static const ffpars_arg conm_conf_args[] = {
@@ -336,12 +339,31 @@ static void conx_fin(fsv_conctx *cx)
 
 static void conm_destroy(void)
 {
-	fsv_logctx_get(conm->logctx)->level = 0;
-	FFLIST_ENUMSAFE(&conm->cons, conn_recycle, fsv_conn, sib);
 	FFLIST_ENUMSAFE(&conm->ctxs, conx_fin, fsv_conctx, sib);
 	FFLIST_ENUMSAFE(&conm->recycled_cons, conn_fin, fsv_conn, sib);
 	ffmem_free(conm);
 	conm = NULL;
+}
+
+/** Close a keep-alive connection.
+UNIX: if a connection is still active, then a higher level module has a memory leak.
+Windows: a connection may be still active while we're waiting for asynchronous cancel callback. */
+static void conn_stop(fsv_conn *c)
+{
+	if (c->kalive_id == NULL) {
+
+#ifdef FF_WIN
+		if (!ffaio_active(&c->aiotask))
+#endif
+			errlog(conm->logctx, FSV_LOG_ERR, "module stop: connection with %S is still active"
+				, &c->host);
+
+		c->aiotask.whandler = c->aiotask.rhandler = NULL;
+		conn_disconnect(c, 0);
+		return;
+	}
+
+	conn_close_keepalive(c);
 }
 
 static int conm_sig(int sig)
@@ -350,6 +372,10 @@ static int conm_sig(int sig)
 	case FSVCORE_SIGSTART:
 		conm->kq = conm->core->conf()->queue;
 		return 0;
+
+	case FSVCORE_SIGSTOP:
+		FFLIST_ENUMSAFE(&conm->cons, conn_stop, fsv_conn, sib);
+		break;
 	}
 	return 0;
 }
@@ -400,17 +426,50 @@ static fsv_conctx * conn_newctx(ffpars_ctx *a, const fsv_connect_cb *cb)
 	return cx;
 }
 
-static ssize_t conn_getvar(fsv_conn *c, const char *name, size_t namelen, void *dst, size_t cap)
+static const ffstr conn_vars[] = {
+	FFSTR_INIT("socket_fd") //ffskt
+
+	//char*:
+	, FFSTR_INIT("upstream_host")
+	, FFSTR_INIT("upstream_addr")
+};
+
+enum CONN_VAR {
+	CONN_VAR_SOCKET_FD
+	, CONN_VAR_UPSTREAM_HOST
+	, CONN_VAR_UPSTREAM_ADDR
+};
+
+static ssize_t conn_getvar(void *obj, const char *name, size_t namelen, void *dst, size_t cap)
 {
-	if (ffs_eqcz(name, namelen, "socket_fd")) {
+	fsv_conn *c = obj;
+	void *p = NULL;
+	size_t n = 0;
+	ssize_t v = ffstr_findarr(conn_vars, FFCNT(conn_vars), name, namelen);
+	if (v == -1)
+		return c->cx->cb->getvar(c->userptr, name, namelen, dst, cap);
+
+	switch (v) {
+
+	case CONN_VAR_SOCKET_FD:
 		if (cap != sizeof(ffskt))
 			return -1;
 		*(ffskt*)dst = c->sk;
 		return sizeof(ffskt);
 
-	} else
-		return -1;
-	return 0;
+	case CONN_VAR_UPSTREAM_HOST:
+		p = c->host.ptr;
+		n = c->host.len;
+		break;
+
+	case CONN_VAR_UPSTREAM_ADDR:
+		p = c->saddr;
+		n = ffsz_len(c->saddr);
+		break;
+	}
+
+	*(char**)dst = p;
+	return n;
 }
 
 static void conn_resettimer(fsv_conn *c, uint t)
@@ -696,7 +755,8 @@ static void conn_connectai(fsv_conn *c)
 	}
 
 	if (c->cur_ai == NULL) {
-		errlog(c->logctx, FSV_LOG_ERR, "%S: no next address to connect", &c->host);
+		dbglog(c->logctx, FSV_LOG_DBGNET, "%S: no next address to connect", &c->host);
+		conx_serv_mark_down(c->cx, c->curserv);
 		conn_notify(c, FSV_CONN_ENOADDR);
 		return;
 	}
@@ -710,12 +770,18 @@ static void conn_connectai(fsv_conn *c)
 /** Connect to a server. */
 static void conn_connectaddr(fsv_conn *c, ffaddr *adr)
 {
+	if (c->ipv4 || c->ipv6)
+		ffsz_copy(c->saddr, sizeof(c->saddr), c->host.ptr, c->host.len);
+	else {
+		size_t n = ffaddr_tostr(adr, c->saddr, sizeof(c->saddr), FFADDR_USEPORT);
+		c->saddr[n] = '\0';
+	}
+
 	c->sk = ffskt_create(ffaddr_family(adr), SOCK_STREAM, IPPROTO_TCP);
 	if (c->sk == FF_BADSKT) {
 		int lev = ((fferr_last() == EINVAL) ? FSV_LOG_WARN : FSV_LOG_ERR);
 
-		syserrlog(c->logctx, lev, "%S: %e, family %u"
-			, &c->host, FFERR_SKTCREAT, (int)ffaddr_family(adr));
+		syserrlog(c->logctx, lev, "%S: %s: %e", &c->host, c->saddr, FFERR_SKTCREAT);
 
 		if (fferr_last() == EINVAL) {
 			conn_connectnextaddr(c);
@@ -726,12 +792,7 @@ static void conn_connectaddr(fsv_conn *c, ffaddr *adr)
 		return;
 	}
 
-	if (fsv_log_checkdbglevel(c->logctx, FSV_LOG_DBGNET)) {
-		char saddr[FF_MAXIP6];
-		size_t n = ffaddr_tostr(adr, saddr, FFCNT(saddr), FFADDR_USEPORT);
-		saddr[n] = '\0';
-		dbglog(c->logctx, FSV_LOG_DBGNET, "trying address %s...", saddr);
-	}
+	dbglog(c->logctx, FSV_LOG_DBGNET, "trying address %s...", c->saddr);
 
 	if (0 != ffskt_nblock(c->sk, 1)) {
 		syserrlog(c->logctx, FSV_LOG_ERR, "%S: %e", &c->host, FFERR_NBLOCK);
@@ -780,25 +841,10 @@ static void conn_onconnect(void *udata)
 	conm->core->fsv_timerstop(&c->tmr);
 
 	if (0 != ffaio_result(&c->aiotask)) {
-
-		ffaddr adr;
-		char saddr[FF_MAXIP6];
-		size_t n;
-
-		if (c->ipv4 || c->ipv6)
-			n = ffs_fmt(saddr, saddr + FFCNT(saddr), "%*s:%u", (size_t)c->hostlen, c->host.ptr, c->port);
-
-		else {
-			ffaddr_copy(&adr, c->cur_ai->ai_addr, c->cur_ai->ai_addrlen);
-			ffip_setport(&adr, c->port);
-			n = ffaddr_tostr(&adr, saddr, FFCNT(saddr), FFADDR_USEPORT);
-		}
-
-		syserrlog(c->logctx, FSV_LOG_ERR, "%S: %*s: %e", &c->host, n, saddr, FFERR_SKTCONN);
+		syserrlog(c->logctx, FSV_LOG_ERR, "%S: %s: %e", &c->host, c->saddr, FFERR_SKTCONN);
 		ffskt_close(c->sk);
 		c->sk = FF_BADSKT;
 
-		conx_serv_mark_down(c->cx, c->curserv);
 		conn_connectnextaddr(c);
 		return;
 	}
@@ -975,7 +1021,6 @@ static int conn_cancelio(fsv_conn *c, int op, ffaio_handler handler, void *udata
 static void conn_onrsig(void *udata)
 {
 	fsv_conn *c = udata;
-	fsv_cacheitem ca;
 
 	if (0 == ffaio_result(&c->aiotask)) {
 
@@ -994,6 +1039,18 @@ static void conn_onrsig(void *udata)
 		syserrlog(conm->logctx, FSV_LOG_ERR, "%S: keep-alive connection: %e", &c->host, FFERR_READ);
 	}
 
+	conn_close_keepalive(c);
+}
+
+#define conn_cancelread(aiotask) \
+	(aiotask)->rhandler = NULL
+
+#endif
+
+static void conn_close_keepalive(fsv_conn *c)
+{
+	fsv_cacheitem ca;
+	FF_ASSERT(c->cx->cachctx != NULL && c->kalive_id != NULL);
 	fsv_cache_init(&ca);
 	ca.logctx = conm->logctx;
 	ca.id = c->kalive_id;
@@ -1007,11 +1064,6 @@ static void conn_onrsig(void *udata)
 	c->kalive_id = NULL;
 	conn_recycle(c);
 }
-
-#define conn_cancelread(aiotask) \
-	(aiotask)->rhandler = NULL
-
-#endif
 
 /** Store keep-alive connection in cache. */
 static void conn_store_keepalive(fsv_conn *c)

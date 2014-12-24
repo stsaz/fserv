@@ -159,10 +159,10 @@ static const fsv_log_output *const log_outs[] = {
 };
 
 static const char * const log_slevels[] = {
-	"error", "error_warn", "error_info", "debug"
+	"error", "error_warn", "error_info", "debug", "access"
 };
 static const uint log_levels[] = {
-	FSV_LOG_ERR, FSV_LOG_WARN, FSV_LOG_INFO, FSV_LOG_DBG
+	FSV_LOG_ERR, FSV_LOG_WARN, FSV_LOG_INFO, FSV_LOG_DBG, FSV_LOG_ACCESS
 };
 
 static int logx_conf_output(ffparser_schem *ps, fsv_logctx *lx, ffpars_ctx *a)
@@ -177,6 +177,8 @@ static int logx_conf_output(ffparser_schem *ps, fsv_logctx *lx, ffpars_ctx *a)
 	if (i == -1)
 		return FFPARS_EBADVAL;
 	outlev = log_levels[i];
+	if (outlev == FSV_LOG_ACCESS)
+		lx->level |= FSV_LOG_ACCESS;
 
 	out = ffarr_push(&lx->outs, logoutput);
 	if (out == NULL)
@@ -278,6 +280,10 @@ static const void * logm_iface(const char *name)
 
 static int logm_start()
 {
+	// get PID as a string
+	uint i = ffs_fromint(ffps_curid(), logm->pid, sizeof(logm->pid), 0);
+	logm->pid[i] = '\0';
+
 	if (logm->flush_delay != 0)
 		logm->srv->timer(&logm->flush_timer, logm->flush_delay, &logm_flushtimer, logm);
 
@@ -331,6 +337,11 @@ static fsv_logctx * logm_newctx(ffpars_ctx *a, fsv_logctx *parent)
 	lx->parent = parent;
 	lx->mlog = &fsv_log_iface;
 
+	if (parent != NULL) {
+		lx->level = parent->level;
+		lx->pass_to_std = parent->pass_to_std;
+	}
+
 	ffpars_setargs(a, lx, logx_args, FFCNT(logx_args));
 	return lx;
 }
@@ -365,7 +376,8 @@ static void logx_output(fsv_logctx *lx, uint lev, const char *msg, size_t len)
 
 		FFARR_WALK(&clx->outs, out) {
 
-			if ((out->level & FSV_LOG_MASK) >= (lev & FSV_LOG_MASK))
+			if ((out->level & FSV_LOG_MASK) >= (lev & FSV_LOG_MASK)
+				&& (out->level & FSV_LOG_ACCESS) == (lev & FSV_LOG_ACCESS))
 			{
 				out->iface->write(out->instance, lev, msg, len);
 			}
@@ -411,7 +423,7 @@ static int logx_addv(fsv_logctx *lx, int level, const char *modname, const ffstr
 	}
 
 	//level
-	{
+	if (!(level & FSV_LOG_ACCESS)) {
 		int lev = level & FSV_LOG_MASK;
 		FF_ASSERT(lev <= FSV_LOG_DBG);
 		s = ffs_copyz(s, end, log_levelstr[lev]);

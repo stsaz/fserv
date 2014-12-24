@@ -137,7 +137,7 @@ static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod);
 static int srv_confinclude(ffparser_schem *ps);
 static int srv_conf(const char *filename, ffparser_schem *ps);
 static int srv_start(void);
-static int srv_stop(int sig);
+static int srv_stop(int sig, fmodule *last);
 static int srv_settmr(void);
 static int srv_evloop(void);
 static void srv_destroymods(void);
@@ -216,7 +216,7 @@ static void srv_destroy(void)
 	ffsig_mask(SIG_UNBLOCK, sigs, FFCNT(sigs));
 #endif
 
-	fftmrq_free(&serv->tmrqu, serv->kq);
+	fftmrq_destroy(&serv->tmrqu, serv->kq);
 	FF_SAFECLOSE(serv->kq, FF_BADFD, (void)ffkqu_close);
 
 	ffstr_free(&serv->pid_fn);
@@ -944,6 +944,9 @@ static int srv_startmods(void)
 		if (r != 0) {
 			srv_errsave(fferr_last(), "module start: %s.  last error"
 				, m->name);
+
+			if (m->sib.prev != fflist_sentl(&serv->mods))
+				srv_stop(FSVCORE_SIGSTOP, FF_GETPTR(fmodule, sib, m->sib.prev));
 			return 1;
 		}
 	}
@@ -994,18 +997,22 @@ static int srv_start(void)
 	serv->pquTm = ffkqu_settm(&serv->quTm, ms);
 
 	serv->state = FSVMAIN_RUN;
-	if (0 != srv_startmods())
-		return 1;
+	if (0 != srv_startmods()) {
+		wh = 1;
+		goto done;
+	}
 
 	errlog(FSV_LOG_INFO, "server started");
 
 	srv_evloop();
-
 	fftmr_stop(serv->tmrqu.tmr, serv->kq);
+
+	wh = 0;
+
+done:
 	srv_destroymods();
 	(void)fffile_rm(serv->pid_fn.ptr);
-
-	return 0;
+	return wh;
 }
 
 static void srv_reopen()
@@ -1061,11 +1068,11 @@ static int srv_evloop(void)
 
 		switch (serv->state) {
 		case FSVMAIN_STOP:
-			srv_stop(FSVCORE_SIGSTOP);
+			srv_stop(FSVCORE_SIGSTOP, NULL);
 			goto end;
 
 		case FSVMAIN_RECONFIG:
-			srv_stop(FSVCORE_SIGSTOP);
+			srv_stop(FSVCORE_SIGSTOP, NULL);
 			goto end;
 
 		case FSVMAIN_REOPEN:
@@ -1081,11 +1088,14 @@ end:
 	return 0;
 }
 
-static int srv_stop(int sig)
+static int srv_stop(int sig, fmodule *last)
 {
-	fflist_item *li;
+	fflist_item *li = serv->mods.last;
 
-	for (li = serv->mods.last;  li != FFLIST_END;  li = li->prev) {
+	if (last != NULL)
+		li = &last->sib;
+
+	for (;  li != fflist_sentl(&serv->mods);  li = li->prev) {
 		fmodule *m = FF_GETPTR(fmodule, sib, li);
 
 		dbglog(FSV_LOG_DBGFLOW, "stopping module %s", m->name);

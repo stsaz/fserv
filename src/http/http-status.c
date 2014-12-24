@@ -216,16 +216,15 @@ static void stat_getdata(void)
 static void stat_finish(void)
 {
 	stat_con *c;
-	fflist_item *li, *next;
+	fflist_item *next;
 
 	ffjson_bufaddv(&statm->jscook, json_btm, FFCNT(json_btm)
 			, FFJSON_CTXCLOSE
 		, FFJSON_CTXCLOSE
 		, NULL);
 
-	FFLIST_WALKNEXTSAFE(statm->waiting_clients.first, li, next) {
+	FFLIST_WALKSAFE(&statm->waiting_clients, c, waiting_sib, next) {
 
-		c = FF_GETPTR(stat_con, waiting_sib, li);
 		fflist_rm(&statm->waiting_clients, &c->waiting_sib);
 		stat_senddata(c);
 	}
