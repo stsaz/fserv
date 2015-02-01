@@ -33,8 +33,7 @@ DBG = -g
 
 override CFLAGS += -c $(OPT) $(DBG) -Wall -Werror -pthread \
 	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) \
-	-ffunction-sections -fdata-sections  -fvisibility=hidden -fno-exceptions \
-	-DFF_OLDLIBC
+	-ffunction-sections -fdata-sections  -fvisibility=hidden -fno-exceptions
 
 override LDFLAGS += -lrt -pthread \
 	-fvisibility=hidden \

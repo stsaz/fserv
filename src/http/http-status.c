@@ -104,6 +104,7 @@ static void* statm_create(const fsv_core *core, ffpars_ctx *pctx, fsv_modinfo *m
 	if (statm == NULL)
 		return NULL;
 
+	fflist_init(&statm->waiting_clients);
 	statm->interval = 500;
 	statm->core = core;
 	ffjson_cookinit(&statm->jscook, NULL, 0);
@@ -303,8 +304,9 @@ static void stat_onevent(fsv_httphandler *h)
 
 	now = statm->core->fsv_gettime();
 	if (fftime_cmp(&statm->expire, &now) <= 0) {
+		ffbool first = fflist_empty(&statm->waiting_clients);
 		fflist_ins(&statm->waiting_clients, &c->waiting_sib);
-		if (statm->waiting_clients.len == 1)
+		if (first)
 			stat_update();
 		return;
 	}

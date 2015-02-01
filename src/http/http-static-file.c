@@ -34,12 +34,13 @@ typedef struct stfl_ctx {
 	fflist_item sib;
 	ffstr root;
 	int maxage;
-	ffstr indexes;
+	ffstr indexes; //ffbstr[]
 } stfl_ctx;
 
 typedef struct stfl_obj {
 	fffd f;
 	uint64 fsize;
+	fffileid fid;
 	uint modtm;
 	const char *mime;
 
@@ -85,6 +86,8 @@ static int stflx_conf_root(ffparser_schem *ps, stfl_ctx *sx, const ffstr *dir);
 static int stfl_htmime_init(void);
 
 static void stflx_destroy(stfl_ctx *sx);
+static stfl_obj * stfl_fromcache(fsv_cacheitem *ca, const char *fn, fsv_logctx *logctx);
+static fffd stfl_idx(fsv_httphandler *h, ffstr3 *fn, stfl_obj **po, fffileinfo *fi, fsv_cacheitem *ca);
 static int stfl_getobj(fsv_httphandler *h, stfl_obj **o);
 static int stfl_process_range(fsv_httphandler *h, int *status, uint64 *fsize, uint64 *foff);
 static void stfl_add_hdrs(fsv_httphandler *h, const fftime *modtm);
@@ -219,18 +222,11 @@ static int stflx_conf_root(ffparser_schem *ps, stfl_ctx *sx, const ffstr *dir)
 
 static int stflx_conf_index(ffparser_schem *ps, stfl_ctx *sx, const ffstr *idx)
 {
-	char *s;
-
 	if (ffpath_rfindslash(idx->ptr, idx->len) != ffarr_end(idx))
 		return FFPARS_EBADVAL; //can't contain slash
 
-	s = ffmem_realloc(sx->indexes.ptr, sx->indexes.len + idx->len + 1);
-	if (s == NULL)
+	if (NULL == ffbstr_push(&sx->indexes, idx->ptr, idx->len))
 		return FFPARS_ESYS;
-	sx->indexes.ptr = s;
-	s = ffmem_copy(ffarr_end(&sx->indexes), idx->ptr, idx->len);
-	*s = '\0';
-	sx->indexes.len += idx->len + 1;
 	return 0;
 }
 
@@ -241,6 +237,7 @@ static void* stflm_create(const fsv_core *core, ffpars_ctx *pctx, fsv_modinfo *m
 	if (stflm == NULL)
 		return NULL;
 
+	fflist_init(&stflm->ctxs);
 	stflm->core = core;
 	ffpars_setargs(pctx, stflm, stflm_conf_args, FFCNT(stflm_conf_args));
 	return stflm;
@@ -420,6 +417,83 @@ static int stfl_redirect(fsv_httphandler *h)
 	return FFHTTP_301_MOVED_PERMANENTLY;
 }
 
+/** Search in cache and check whether the file in cache was modified. */
+static stfl_obj * stfl_fromcache(fsv_cacheitem *ca, const char *fn, fsv_logctx *logctx)
+{
+	fffileinfo fi;
+	stfl_obj *o;
+
+	if (FSV_CACH_OK != stflm->cache->fetch(stflm->cachectx, ca, 0))
+		return NULL;
+
+	o = *(stfl_obj**)ca->data;
+
+	if (0 == fffile_infofn(fn, &fi)
+		&& o->modtm == fffile_infomtime(&fi).s
+#ifdef FF_UNIX
+		&& o->fid == fffile_infoid(&fi)
+#else
+		&& o->fsize == fffile_infosize(&fi)
+#endif
+		) {
+		return o;
+	}
+
+	fsv_dbglog(logctx, FSV_LOG_DBGFLOW, STFL_MODNAME, NULL, "file was modified: %s", fn);
+	stflm->cache->unref(ca, FSV_CACH_UNLINK);
+	return NULL;
+}
+
+/** Open the first existing index file.
+@fn: [in/out] filename */
+static fffd stfl_idx(fsv_httphandler *h, ffstr3 *fn, stfl_obj **po, fffileinfo *fi, fsv_cacheitem *ca)
+{
+	stfl_ctx *sx = h->hctx;
+	fffd f = FF_BADFD;
+	size_t fnlen, pathlen = fn->len, off = 0;
+	stfl_obj *o = NULL;
+	ffstr idx;
+
+	for (;;) {
+
+		if (0 == ffbstr_next(sx->indexes.ptr, sx->indexes.len, &off, &idx))
+			break;
+		if (pathlen + idx.len + 1 >= fn->cap)
+			continue; //too large path
+
+		fnlen = ffsz_copy(fn->ptr + pathlen, fn->cap - pathlen, idx.ptr, idx.len) - fn->ptr;
+
+		if (stflm->cache != NULL) {
+			fsv_cache_init(ca);
+			ca->logctx = h->logctx;
+			ca->key = fn->ptr;
+			ca->keylen = fnlen;
+			o = stfl_fromcache(ca, fn->ptr, h->logctx);
+			if (o != NULL) {
+				*po = o;
+				f = o->f;
+				break;
+			}
+		}
+
+		f = fffile_open(fn->ptr, O_RDONLY | O_NOATIME | FFO_NODOSNAME | O_NONBLOCK);
+		if (f == FF_BADFD)
+			continue;
+
+		if (0 == fffile_info(f, fi)
+			&& !fffile_isdir(fffile_infoattr(fi))) {
+
+			fn->len = fnlen;
+			break;
+		}
+
+		fffile_close(f);
+		f = FF_BADFD;
+	}
+
+	return f;
+}
+
 /** Get object for the requested file. */
 static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 {
@@ -429,10 +503,9 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	fffileinfo fi;
 	ffstr reqpath, fn_ext;
 	char fn_s[FF_MAXPATH];
-	int st, isindex;
-	size_t fnlen, pathlen, indexlen;
+	int st;
+	size_t fnlen;
 	fsv_cacheitem ca;
-	const char *pindex = sx->indexes.ptr;
 
 	// get full filename
 	reqpath = ffhttp_reqpath(h->req);
@@ -443,74 +516,38 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 		st = FFHTTP_400_BAD_REQUEST;
 		goto fail;
 	}
-	pathlen = fnlen;
 
-	isindex = ('/' == ffarr_back(&reqpath));
+	if ('/' == ffarr_back(&reqpath)) {
+		ffstr3 fn;
 
-next_index:
-	if (isindex) {
-		if (pindex == ffarr_end(&sx->indexes)) {
+		ffarr_set3(&fn, fn_s, fnlen, sizeof(fn_s));
+		o = NULL;
+		f = stfl_idx(h, &fn, &o, &fi, &ca);
+		if (f == FF_BADFD) {
 			st = FFHTTP_404_NOT_FOUND;
 			goto fail;
 		}
-
-		indexlen = ffsz_len(pindex);
-		fnlen = ffsz_copy(fn_s + pathlen, sizeof(fn_s) - pathlen, pindex, indexlen) - fn_s;
-
-		pindex += indexlen + 1;
-		if (pathlen + indexlen + 1 == sizeof(fn_s))
-			goto next_index;
-	}
-
-	// search in cache, check whether the file was modified
-	if (stflm->cache != NULL) {
-		fsv_cache_init(&ca);
-		ca.logctx = h->logctx;
-		ca.key = fn_s;
-		ca.keylen = fnlen;
-		if (FSV_CACH_OK == stflm->cache->fetch(stflm->cachectx, &ca, 0)) {
-			fftime modtm;
-			o = *(stfl_obj**)ca.data;
-
-			if (0 == fffile_time(o->f, &modtm, NULL, NULL)
-				&& o->modtm == modtm.s) {
-
-				*po = o;
-				return FFHTTP_200_OK;
-			}
-
-			stflm->cache->unref(&ca, FSV_CACH_UNLINK);
-			o = NULL;
-		}
-	}
-
-	if (isindex) {
-
-		f = fffile_open(fn_s, FFO_OPEN | O_RDONLY | O_NOATIME | FFO_NODOSNAME);
-		if (f == FF_BADFD)
-			goto next_index;
-
-		if (0 != fffile_info(f, &fi)
-			|| fffile_isdir(fffile_infoattr(&fi))) {
-
-			fffile_close(f);
-			f = FF_BADFD;
-			goto next_index;
+		if (o != NULL) {
+			*po = o;
+			return FFHTTP_200_OK;
 		}
 
 	} else {
 
-		f = fffile_open(fn_s, FFO_OPEN | O_RDONLY | O_NOATIME | FFO_NODOSNAME);
-		if (f == FF_BADFD) {
-
-#ifdef FF_WIN
-			if (fferr_last() == ERROR_ACCESS_DENIED) {
-				int a = fffile_attrfn(fn_s);
-				if (fffile_isdir(a))
-					goto redirect;
+		if (stflm->cache != NULL) {
+			fsv_cache_init(&ca);
+			ca.logctx = h->logctx;
+			ca.key = fn_s;
+			ca.keylen = fnlen;
+			o = stfl_fromcache(&ca, fn_s, h->logctx);
+			if (o != NULL) {
+				*po = o;
+				return FFHTTP_200_OK;
 			}
-#endif
+		}
 
+		f = fffile_open(fn_s, O_RDONLY | O_NOATIME | FFO_NODOSNAME | O_NONBLOCK);
+		if (f == FF_BADFD) {
 			st = FFHTTP_500_INTERNAL_SERVER_ERROR;
 			if (fferr_nofile(fferr_last()))
 				st = FFHTTP_404_NOT_FOUND;
@@ -524,8 +561,11 @@ next_index:
 			goto fail;
 		}
 
-		if (fffile_isdir(fffile_infoattr(&fi)))
-			goto redirect;
+		if (fffile_isdir(fffile_infoattr(&fi))) {
+			fsv_dbglog(h->logctx, FSV_LOG_DBGFLOW, STFL_MODNAME, NULL, "the requested file is a directory");
+			st = stfl_redirect(h);
+			goto fail;
+		}
 	}
 
 	o = ffmem_tcalloc1(stfl_obj);
@@ -537,14 +577,13 @@ next_index:
 	o->f = f;
 	f = FF_BADFD;
 	o->fsize = fffile_infosize(&fi);
-	o->modtm = fffile_infotimew(&fi).s;
+	o->fid = fffile_infoid(&fi);
+	o->modtm = fffile_infomtime(&fi).s;
 
 	fn_ext = ffpath_fileext(fn_s, fnlen);
 	o->mime = stfl_findmime(&fn_ext);
 
 	if (stflm->cache != NULL) {
-		ca.key = fn_s;
-		ca.keylen = fnlen;
 		ca.data = (void*)&o;
 		ca.datalen = sizeof(stfl_obj*);
 		ca.id = NULL;
@@ -557,10 +596,6 @@ next_index:
 
 	*po = o;
 	return FFHTTP_200_OK;
-
-redirect:
-	fsv_dbglog(h->logctx, FSV_LOG_DBGFLOW, STFL_MODNAME, NULL, "the requested file is a directory");
-	st = stfl_redirect(h);
 
 fail:
 	if (f != FF_BADFD)

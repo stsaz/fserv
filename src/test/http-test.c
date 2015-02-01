@@ -229,6 +229,7 @@ const ffpars_arg test_http_conf_args[] = {
 int testm_conf_http(ffparser_schem *ps, tester *t, ffpars_ctx *ctx)
 {
 	ht = ffmem_tcalloc1(test_http_s);
+	fflist_init(&ht->reqs);
 
 	ffpars_setargs(ctx, ht, test_http_conf_args, FFCNT(test_http_conf_args));
 	return 0;

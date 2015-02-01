@@ -316,6 +316,7 @@ void htpx_onconnect(void *obj, int result)
 		syserrlog(c->logctx, FSV_LOG_ERR, "%e", FFERR_SKTOPT);
 	}
 
+	c->conn_acq_time = htpxm->core->fsv_gettime();
 	fsv_taskpost(htpxm->core, &c->rtsk, &htpx_startrecv, c);
 
 	htpx_http.send(c->hfconn, NULL, 0, FSV_HTTP_PASS | FSV_HTTP_DONE);
@@ -507,6 +508,7 @@ static int htpx_mkreq(htpxcon *c, ffstr *dstbuf, uint64 cont_len)
 	int er;
 	int ret;
 	ffstr3 tmp = {0};
+	ffstr schem;
 	ffhttp_cook req;
 	char stkbuf[4 * 1024];
 	ffurl url;
@@ -527,11 +529,18 @@ static int htpx_mkreq(htpxcon *c, ffstr *dstbuf, uint64 cont_len)
 		goto done;
 	}
 	c->serv_host = ffurl_get(&url, c->serv_url.ptr, FFURL_FULLHOST);
+	schem = ffurl_get(&url, c->serv_url.ptr, FFURL_SCHEME);
 
 	if (0 != htpxm->core->process_vars(&tmp, &c->px->req_host, c->px->conn->getvar, c->serv_id, c->logctx)) {
 		ret = FFERR_BUFALOC;
 		goto done;
 	}
+	/* Don't use port number in Host header field if the port matches the scheme.
+	Since $upstream_host always contains port number, cut it off here. */
+	if (url.portlen == 0)
+		tmp.len = ffs_rfind(tmp.ptr, tmp.len, ':') - tmp.ptr;
+	else if (c->px->req_host_static && url.port == ffuri_scheme2port(schem.ptr, schem.len))
+		tmp.len -= FFSLEN(":") + url.portlen;
 	ffhttp_addihdr(&req, FFHTTP_HOST, tmp.ptr, tmp.len);
 
 	req.cont_len = cont_len;
@@ -631,7 +640,6 @@ static void htpx_resprecv(fsv_httphandler *h)
 
 	if (h->id->udata == NULL) {
 		h->id->udata = (void*)1;
-		c->resp_start_time = htpxm->core->fsv_gettime();
 	}
 
 	dbglog(c->logctx, FSV_LOG_DBGNET, "receiving data...");
@@ -1020,9 +1028,7 @@ static void htpx_out(fsv_httphandler *h)
 
 	if (h->id->udata == NULL && !c->tunnel) {
 		// the first answer to http module
-		int er = htpx_mkresp(c, c->clientresp, &c->resp);
-		if (er != 0) {
-			syserrlog(c->logctx, FSV_LOG_ERR, "%e", er);
+		if (0 != htpx_mkresp(c, c->clientresp, &c->resp)) {
 			h->http->send(h->id, NULL, 0, FSV_HTTP_ERROR);
 			return;
 		}
@@ -1125,8 +1131,10 @@ int htpx_mkresp(htpxcon *c, ffhttp_cook *cook, const ffhttp_response *resp)
 	}
 
 	ret = htpx_addresphdrs_fromconf(c, cook);
-	if (ret != 0)
+	if (ret != 0) {
+		syserrlog(c->logctx, FSV_LOG_ERR, "%e", ret);
 		return ret;
+	}
 
 	return 0;
 }
@@ -1223,7 +1231,7 @@ static void htpx_readdata(void *udata)
 			goto done;
 		}
 
-		r = c->px->conn->recv(c->serv_id, NULL, 0, &htpx_readbody, c);
+		r = c->px->conn->recv(c->serv_id, NULL, 0, &htpx_readdata, c);
 		if (r == FSV_IO_ASYNC) {
 			htpx_resettimer(c, HTPX_TMR_READ);
 			return;

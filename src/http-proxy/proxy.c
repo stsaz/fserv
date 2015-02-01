@@ -113,13 +113,13 @@ static const ffpars_arg htpx_conf_args[] = {
 	, { "pass_query_string",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(htpxctx, pass_query_string) }
 	, { "pass_client_headers",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(htpxctx, pass_client_hdrs) }
 
-	, { "read_header_growby",  FFPARS_TSIZE,  FFPARS_DSTOFF(htpxctx, read_header_growby) }
-	, { "max_header_size",  FFPARS_TSIZE,  FFPARS_DSTOFF(htpxctx, max_header_size) }
+	, { "read_header_growby",  FFPARS_TSIZE | FFPARS_FNOTZERO,  FFPARS_DSTOFF(htpxctx, read_header_growby) }
+	, { "max_header_size",  FFPARS_TSIZE | FFPARS_FNOTZERO,  FFPARS_DSTOFF(htpxctx, max_header_size) }
 	, { "request_headers",  FFPARS_TOBJ,  FFPARS_DST(&htpx_conf_reqhdrs) }
 	, { "response_headers",  FFPARS_TOBJ,  FFPARS_DST(&htpx_conf_resphdrs) }
 
-	, { "write_timeout",  FFPARS_TINT | FFPARS_F16BIT,  FFPARS_DSTOFF(htpxctx, write_timeout) }
-	, { "read_timeout",  FFPARS_TINT | FFPARS_F16BIT,  FFPARS_DSTOFF(htpxctx, read_timeout) }
+	, { "write_timeout",  FFPARS_TINT | FFPARS_F16BIT | FFPARS_FNOTZERO,  FFPARS_DSTOFF(htpxctx, write_timeout) }
+	, { "read_timeout",  FFPARS_TINT | FFPARS_F16BIT | FFPARS_FNOTZERO,  FFPARS_DSTOFF(htpxctx, read_timeout) }
 
 	, { NULL,  FFPARS_TCLOSE,  FFPARS_DST(&htpx_conf_end) }
 };
@@ -263,6 +263,7 @@ static void * htpxm_create(const fsv_core *core, ffpars_ctx *c, fsv_modinfo *m)
 	if (htpxm == NULL)
 		return NULL;
 	fflist_init(&htpxm->ctxs);
+	fflist_init(&htpxm->cons);
 	fsv_sktopt_init(&htpxm->sktopt);
 	htpxm->core = core;
 	htpxm->page_size = core->conf()->pagesize;
@@ -542,15 +543,16 @@ void htpx_accesslog(htpxcon *c)
 	fftime stop = {0};
 	uint64 sent_body = 0, recvd_body = 0;
 
-	if (c->resp_start_time.s != 0) {
+	if (c->conn_acq_time.s != 0) {
 		stop = htpxm->core->fsv_gettime();
-		fftime_diff(&c->resp_start_time, &stop);
+		fftime_diff(&c->conn_acq_time, &stop);
 	}
 
 	if (c->nwrite > c->req_hdrs.len)
 		sent_body = c->nwrite - c->req_hdrs.len;
 
-	if (c->resp.h.has_body && c->nread > c->resp.h.len)
+	if ((c->resp.h.has_body || c->clientreq->method == FFHTTP_CONNECT)
+		&& c->nread > c->resp.h.len)
 		recvd_body = c->nread - c->resp.h.len;
 
 	ffhttp_findihdr(&c->resp.h, FFHTTP_SERVER, &srvname);
@@ -588,6 +590,14 @@ void htpx_errlog(htpxcon *c, int lev, const char *fmt, ...)
 	status = ffhttp_firstline(&c->resp.h);
 	ffstr_set(&reqln, c->req_hdrs.ptr, c->nreqline);
 
+	if (c->serv_host.len == 0) {
+		//'serv_host' isn't assigned in HTTP tunnel mode
+		ffurl url;
+		ffurl_init(&url);
+		if (FFURL_EOK == ffurl_parse(&url, c->serv_url.ptr, c->serv_url.len))
+			c->serv_host = ffurl_get(&url, c->serv_url.ptr, FFURL_FULLHOST);
+	}
+
 	errlog(c->logctx, lev, "%S.  Upstream server: \"%S\",  request: \"%S\",  response: \"%S\""
 		, &omsg, &c->serv_host, &reqln, &status);
 }
@@ -597,7 +607,7 @@ static void htpx_send(fsv_httpfilter *_hf, const void *buf, size_t len, int flag
 	htpxfilter *hf = (htpxfilter*)_hf, *next;
 	htpxcon *c = (htpxcon*)hf->con;
 
-	if (hf->sib.next != NULL) {
+	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
 		next = FF_GETPTR(htpxfilter, sib, hf->sib.next);
 
 		ffsf_init(&next->input);
@@ -623,7 +633,7 @@ static void htpx_sendfile(fsv_httpfilter *_hf, fffd fd, uint64 fsize, uint64 fof
 	htpxfilter *hf = (htpxfilter*)_hf, *next;
 	htpxcon *c = (htpxcon*)hf->con;
 
-	if (hf->sib.next != NULL) {
+	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
 		next = FF_GETPTR(htpxfilter, sib, hf->sib.next);
 
 		ffsf_init(&next->input);
@@ -645,7 +655,7 @@ static void htpx_sendfile(fsv_httpfilter *_hf, fffd fd, uint64 fsize, uint64 fof
 
 static void htpx_chain_error(htpxcon *c, htpxfilter *hf)
 {
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: '%s' reported error"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: '%s' reported error"
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname);
 	htpx_chain_free(c);
 	c->px->client_http->send(c->hf, NULL, 0, FSV_HTTP_ERROR);
@@ -661,7 +671,7 @@ static int htpx_chain_process(htpxcon *c, htpxfilter **phf)
 		return 1;
 	}
 
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: '%s' returned: back:%u, more:%u, done:%u"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: '%s' returned: back:%u, more:%u, done:%u"
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname
 		, (hf->flags & FSV_HTTP_BACK) != 0, (hf->flags & FSV_HTTP_MORE) != 0, (hf->flags & FSV_HTTP_DONE) != 0);
 
@@ -716,7 +726,7 @@ done:
 	if (hf->reqfilt)
 		c->req_fin = 1;
 
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: done"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: done"
 		, FILT_TYPE(hf->reqfilt));
 	return 1;
 }
@@ -742,7 +752,7 @@ void htpx_callmod(htpxcon *c, htpxfilter *hf)
 	p.req = NULL;
 	p.resp = NULL;
 
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: calling '%s'. data: %U. last:%u"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: calling '%s'. data: %U. last:%u"
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname, ffsf_len(p.data)
 		, (p.flags & FSV_HTTP_LAST) != 0);
 
@@ -762,7 +772,7 @@ static void htpx_finfilter(htpxcon *c, htpxfilter *hf)
 		p.req = NULL;
 		p.resp = NULL;
 
-		dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: closing '%s'"
+		dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: closing '%s'"
 			, FILT_TYPE(hf->reqfilt), hf->sm->modname);
 
 		hf->sm->handler->ondone(&p);

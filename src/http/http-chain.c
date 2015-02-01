@@ -32,7 +32,7 @@ void http_send(fsv_httpfilter *_hf, const void *buf, size_t len, int flags)
 	httpfilter *hf = (httpfilter*)_hf, *next;
 	httpcon *c = (httpcon*)hf->con;
 
-	if (hf->sib.next != NULL) {
+	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
 		next = FF_GETPTR(httpfilter, sib, hf->sib.next);
 
 		ffsf_init(&next->input);
@@ -58,7 +58,7 @@ void http_sendv(fsv_httpfilter *_hf, ffiovec *iovs, size_t n, int flags)
 	httpfilter *hf = (httpfilter*)_hf, *next;
 	httpcon *c = (httpcon*)hf->con;
 
-	if (hf->sib.next != NULL) {
+	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
 		next = FF_GETPTR(httpfilter, sib, hf->sib.next);
 
 		ffsf_init(&next->input);
@@ -82,7 +82,7 @@ void http_sendfile(fsv_httpfilter *_hf, fffd fd, uint64 fsize, uint64 foffset, s
 	httpfilter *hf = (httpfilter*)_hf, *next;
 	httpcon *c = (httpcon*)hf->con;
 
-	if (hf->sib.next != NULL) {
+	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
 		next = FF_GETPTR(httpfilter, sib, hf->sib.next);
 
 		ffsf_init(&next->input);
@@ -128,7 +128,7 @@ static void http_respchain_continue(void *param)
 /** Handle error reported from a filter. */
 static void http_chain_error(httpcon *c, httpfilter *hf)
 {
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: '%s' reported an error"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: '%s' reported an error"
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname);
 
 	if (hf->reqfilt)
@@ -203,7 +203,7 @@ static int http_chain_process(httpcon *c, httpfilter **phf)
 		return 1;
 	}
 
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: '%s' returned. back:%u, more:%u, done:%u"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: '%s' returned. back:%u, more:%u, done:%u"
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname
 		, (hf->flags & FSV_HTTP_BACK) != 0, (hf->flags & FSV_HTTP_MORE) != 0, (hf->flags & FSV_HTTP_DONE) != 0);
 
@@ -252,7 +252,7 @@ prev:
 	return 0;
 
 done:
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: done", FILT_TYPE(hf->reqfilt));
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: done", FILT_TYPE(hf->reqfilt));
 
 	if (hf->reqfilt) {
 		c->req_fin = 1;
@@ -296,7 +296,7 @@ static void http_callmod(httpcon *c, httpfilter *hf)
 	p.req = &c->req;
 	p.resp = &c->resp;
 
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: calling '%s'. data: %U. last:%u"
+	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: calling '%s'. data: %U. last:%u"
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname, ffsf_len(p.data)
 		, (p.flags & FSV_HTTP_LAST) != 0);
 
@@ -316,7 +316,7 @@ static void http_finfilter(httpcon *c, httpfilter *hf)
 		p.req = &c->req;
 		p.resp = &c->resp;
 
-		dbglog(c->logctx, FSV_LOG_DBGFLOW, "%s: closing '%s'"
+		dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: closing '%s'"
 			, FILT_TYPE(hf->reqfilt), hf->sm->modname);
 
 		hf->sm->handler->ondone(&p);

@@ -168,6 +168,8 @@ static void * srv_create(void)
 	if (serv == NULL)
 		return NULL;
 
+	fftask_init(&serv->taskmgr);
+	fflist_init(&serv->mods);
 	serv->kq = FF_BADFD;
 	fftmrq_init(&serv->tmrqu);
 	serv->events_count = 64;
@@ -310,6 +312,7 @@ static int srv_conf_rootdir(ffparser_schem *ps, fserver *srv, const ffstr *s)
 	char root[FF_MAXPATH];
 	size_t n;
 	ffstr3 fn = {0};
+	fffileinfo fi;
 
 	n = ffpath_norm(root, FF_MAXPATH, s->ptr, s->len, 0);
 	if (n == 0)
@@ -324,7 +327,7 @@ static int srv_conf_rootdir(ffparser_schem *ps, fserver *srv, const ffstr *s)
 	ffstr_set(&serv->rootdir, fn.ptr, fn.len - 1);
 	ffarr_null(&fn);
 
-	if (!ffdir_exists(serv->rootdir.ptr))
+	if (0 != fffile_infofn(serv->rootdir.ptr, &fi))
 		return FFPARS_ESYS;
 
 	serv->cfg.root = serv->rootdir.ptr;
@@ -570,8 +573,10 @@ static const fsv_modinfo * srv_findmod(const char *name, size_t namelen)
 
 static void srv_timer(fsv_timer *t, int64 interval_ms, fftmrq_handler func, void *param)
 {
-	if (fftmrq_active(&serv->tmrqu, t))
+	if (fftmrq_active(&serv->tmrqu, t)) {
+		dbglog(FSV_LOG_DBGFLOW, "remove timer: %p", t);
 		fftmrq_rm(&serv->tmrqu, t);
+	}
 
 	if (interval_ms == 0)
 		return;
@@ -579,6 +584,8 @@ static void srv_timer(fsv_timer *t, int64 interval_ms, fftmrq_handler func, void
 	t->handler = func;
 	t->param = param;
 	fftmrq_add(&serv->tmrqu, t, interval_ms);
+	dbglog(FSV_LOG_DBGFLOW, "add timer: %p, interval: %D, handler: %p, param: %p"
+		, t, interval_ms, func, param);
 }
 
 static fftime srv_gettime4(ffdtm *dt, char *dst, size_t cap, uint flags)
@@ -693,7 +700,7 @@ static int srv_savepid(uint pid)
 	fffd f;
 	int r;
 
-	f = fffile_open(serv->pid_fn.ptr, FFO_CREATE | O_WRONLY);
+	f = fffile_open(serv->pid_fn.ptr, O_CREAT | O_TRUNC | O_WRONLY);
 	if (f == FF_BADFD)
 		return 1;
 
@@ -715,7 +722,7 @@ static int srv_readpid(void)
 	fffd f;
 	int pid;
 
-	f = fffile_open(serv->pid_fn.ptr, FFO_OPEN | O_RDONLY);
+	f = fffile_open(serv->pid_fn.ptr, O_RDONLY);
 	if (f == FF_BADFD) {
 		srv_errsave(fferr_last(), "open PID file: %s", serv->pid_fn.ptr);
 		return 0;
@@ -843,7 +850,7 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 	ffbool include = 0;
 	ffstr mp;
 
-	fd = fffile_open(filename, FFO_OPEN | O_RDONLY);
+	fd = fffile_open(filename, O_RDONLY);
 	if (fd == FF_BADFD) {
 		srv_errsave(fferr_last(), "%e: %s", FFERR_FOPEN, filename);
 		return FFPARS_ESYS;

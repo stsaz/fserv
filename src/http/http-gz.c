@@ -109,6 +109,7 @@ static void* gzm_create(const fsv_core *core, ffpars_ctx *pctx, fsv_modinfo *mi)
 	if (gzm == NULL)
 		return NULL;
 
+	fflist_init(&gzm->ctxs);
 	gzm->core = core;
 	return gzm;
 }

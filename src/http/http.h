@@ -101,8 +101,7 @@ struct httphost {
 	ushort read_body_tmout
 		, write_tmout;
 	byte linger;
-	unsigned accesslog_info_static :1
-		, def_mime_type_static :1;
+	unsigned accesslog_info_static :1;
 };
 
 /** Defines HTTP handler for a particular request path. */

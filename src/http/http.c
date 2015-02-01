@@ -9,6 +9,7 @@ Copyright 2014 Simon Zolin.
 
 
 httpmodule *httpm;
+static const char *const http_def_mime = "application/octet-stream";
 
 // FSERV MODULE
 static void * httpm_create(const fsv_core *core, ffpars_ctx *c, fsv_modinfo *m);
@@ -273,6 +274,7 @@ static int httpm_conf_host(ffparser_schem *ps, httpmodule *hm, ffpars_ctx *args)
 		return FFPARS_ESYS;
 	fflist_ins(&httpm->hosts, &h->sib);
 
+	fflist_init(&h->routes);
 	h->logctx = httpm->logctx;
 	h->err_hdler = httpm->err_hdler;
 	h->reqbody_buf_size = 8 * 1024;
@@ -280,6 +282,7 @@ static int httpm_conf_host(ffparser_schem *ps, httpmodule *hm, ffpars_ctx *args)
 	h->read_body_tmout = 65;
 	h->write_tmout = 65;
 	h->linger = 1;
+	ffstr_setz(&h->def_mime_type, http_def_mime);
 
 	rc = hthost_conf_alias(NULL, h, hostname);
 	if (rc != 0) {
@@ -301,7 +304,7 @@ static void hthost_destroy(httphost *h)
 	FFLIST_ENUMSAFE(&h->routes, hstroute_free, httptarget, sib);
 	ffarr_free(&h->listeners);
 
-	if (!h->def_mime_type_static)
+	if (h->def_mime_type.ptr != http_def_mime)
 		ffstr_free(&h->def_mime_type);
 
 	if (!h->accesslog_info_static)
@@ -477,11 +480,6 @@ static int hthost_conf_end(ffparser_schem *ps, httphost *h)
 		h->accesslog_info_static = 1;
 	}
 
-	if (h->def_mime_type.ptr == NULL) {
-		ffstr_setcz(&h->def_mime_type, "application/octet-stream");
-		h->def_mime_type_static = 1;
-	}
-
 	return hthost_hstroute_init(h);
 }
 
@@ -565,6 +563,7 @@ static void * httpm_create(const fsv_core *core, ffpars_ctx *args, fsv_modinfo *
 		return NULL;
 
 	fflist_init(&httpm->hosts);
+	fflist_init(&httpm->cons);
 	httpm->core = core;
 	httpm->logctx = core->conf()->logctx;
 
@@ -855,7 +854,8 @@ void http_accesslog(httpcon *c)
 	if (c->nwrite > c->respbuf.len)
 		sent_body = c->nwrite - c->respbuf.len;
 
-	if (c->req.h.has_body && c->nread > c->req.h.len)
+	if ((c->req.h.has_body || c->req.method == FFHTTP_CONNECT)
+		&& c->nread > c->req.h.len)
 		recvd_body = c->nread - c->req.h.len; //note: may be larger than the actual request body
 
 	(void)httpm->core->process_vars(&addinfo, &c->host->accesslog_info, &http_getvar, c, c->logctx);

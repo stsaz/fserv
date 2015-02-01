@@ -12,7 +12,7 @@ Copyright 2014 Simon Zolin.
 #include <FF/sendfile.h>
 
 
-#define FSV_VER "0.20"
+#define FSV_VER "0.21"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;
@@ -173,6 +173,7 @@ enum FSV_LOG_LEV {
 
 	, FSV_LOG_DBGFLOW = 0x10
 	, FSV_LOG_DBGNET = 0x20
+	, FSV_LOG_HTTPFILT = 0x40
 	, FSV_LOG_DBGMASK = 0xfff0
 
 	, FSV_LOG_ACCESS = 0x10000

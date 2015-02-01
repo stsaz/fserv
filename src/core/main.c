@@ -192,7 +192,7 @@ static FFINL int daemonize() {
 	setsid();
 	umask(0);
 
-	fd = fffile_open("/dev/null", FFO_OPEN | O_RDWR);
+	fd = fffile_open("/dev/null", O_RDWR);
 	if (fd == FF_BADFD) {
 		flog_errsys("error", "%s", "open /dev/null");
 		return -1;

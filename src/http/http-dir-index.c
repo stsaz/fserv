@@ -43,7 +43,7 @@ typedef struct drix_con {
 
 typedef struct direntry {
 	ffstr fn;
-	fffileinfo fi;
+	ffdir_einfo fi;
 } direntry;
 
 typedef struct direntries {
@@ -144,7 +144,7 @@ void* http_loadfile(const char *fn, size_t *size)
 	char *d = NULL;
 	uint64 fsz;
 
-	fd = fffile_open(fn, FFO_OPEN | O_RDONLY);
+	fd = fffile_open(fn, O_RDONLY);
 	if (fd == FF_BADFD)
 		return NULL;
 
@@ -194,6 +194,7 @@ static void* drixm_create(const fsv_core *core, ffpars_ctx *pctx, fsv_modinfo *m
 		return NULL;
 
 	drixm->show_hidden = 0;
+	fflist_init(&drixm->ctxs);
 
 	drixm->core = core;
 	ffpars_setargs(pctx, drixm, drixm_conf_args, FFCNT(drixm_conf_args));
@@ -255,7 +256,7 @@ static void dirents_free(direntries *e)
 /** Get list of files in directory. */
 static int dirents_fill(direntries *e)
 {
-	const fffileinfo *fi;
+	const ffdir_einfo *fi;
 	direntry *ent;
 	ffsyschar *name;
 	char *fn;
@@ -295,7 +296,7 @@ static int dirents_fill(direntries *e)
 
 		if (e->use_crc) {
 			ffcrc32_updatestr(&e->crc, ent->fn.ptr, ent->fn.len, 0);
-			ffcrc32_updatestr(&e->crc, (char*)fi, sizeof(fffileinfo), 0);
+			ffcrc32_updatestr(&e->crc, (char*)fi, sizeof(ffdir_einfo), 0);
 		}
 	}
 
@@ -586,7 +587,7 @@ static int drix_html_additem(ffstr3 *buf, const direntry *ent, int f)
 
 	{
 	ffdtm dt;
-	fftime lwtm = fffile_infotimew(&ent->fi);
+	fftime lwtm = fffile_infomtime(&ent->fi);
 	fftime_split(&dt, &lwtm, FFTIME_TZUTC);
 	nsdt = fftime_tostr(&dt, sdt, sizeof(sdt), FFTIME_WDMY);
 	}

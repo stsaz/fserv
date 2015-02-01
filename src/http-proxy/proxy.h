@@ -112,7 +112,7 @@ struct htpxcon {
 	ffstr3 hdr;
 	ffstr3 body;
 	ffhttp_response resp; //parsed response from the upstream server
-	fftime resp_start_time;
+	fftime conn_acq_time;
 	ffhttp_chunked chunked;
 	fsv_httpfilter *hfrecv;
 

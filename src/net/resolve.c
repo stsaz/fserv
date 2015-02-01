@@ -145,7 +145,6 @@ static int resvm_conf_end(ffparser_schem *ps, resolver *rs);
 
 static int resvm_start();
 
-#define dns_serv_sib(li)  FF_GETPTR(dns_serv, sib, li)
 static int dns_serv_init(dns_serv *serv);
 static void dns_serv_fin(dns_serv *serv);
 static dns_serv * resv_nextserv(resolver *r);
@@ -252,7 +251,7 @@ static int resvm_conf_end(ffparser_schem *ps, resolver *rs)
 {
 	if (resvm->buf_size < 512)
 		resvm->buf_size = 512;
-	resvm->curserv = dns_serv_sib(resvm->servs.first);
+	resvm->curserv = FF_GETPTR(dns_serv, sib, resvm->servs.first);
 	return 0;
 }
 
@@ -271,6 +270,7 @@ static void * resvm_create(const fsv_core *core, ffpars_ctx *c, fsv_modinfo *m)
 	resvm->enable_ipv6 = 1;
 	resvm->buf_size = 512;
 	ffrbt_init(&resvm->queries);
+	fflist_init(&resvm->servs);
 	resvm->core = core;
 	resvm->logctx = conf->logctx;
 
@@ -611,6 +611,12 @@ static int resv_sendquery1(dns_query *q, dns_serv *serv, int resend)
 
 fail:
 	syserrlog_srv(serv, FSV_LOG_ERR, "%e", er);
+	if (er == FFERR_WRITE) {
+		ffskt_close(serv->sk);
+		serv->sk = FF_BADSKT;
+		ffaio_fin(&serv->aiotask);
+		serv->connected = 0;
+	}
 	return 1;
 }
 
@@ -1121,7 +1127,7 @@ static dns_serv * resv_nextserv(resolver *r)
 {
 	dns_serv *serv = r->curserv;
 	fflist_item *next = ((serv->sib.next != NULL) ? serv->sib.next : r->servs.first);
-	r->curserv = dns_serv_sib(next);
+	r->curserv = FF_GETPTR(dns_serv, sib, next);
 	return serv;
 }
 

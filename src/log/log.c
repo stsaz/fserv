@@ -125,7 +125,7 @@ static const char * const log_conf_levelstr[] = {
 };
 
 static const char *const log_conf_dbglevelstr[] = {
-	"flow", "net", "all"
+	"flow", "net", "http-filters", "all"
 };
 
 static int logx_conf_setlevel(ffparser_schem *ps, fsv_logctx *lx, const ffstr *s)
