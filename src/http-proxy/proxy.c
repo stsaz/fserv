@@ -59,6 +59,7 @@ static int htpxm_conf_sktops(ffparser_schem *ps, void *unused, ffpars_ctx *confc
 
 static const ffpars_enumlist htpx_conf_tunnel;
 static int htpx_conf_connectto(ffparser_schem *ps, htpxctx *px, ffpars_ctx *confctx);
+static int htpx_conf_cache(ffparser_schem *ps, htpxctx *px, ffpars_ctx *args);
 static int htpx_conf_trynext(ffparser_schem *ps, htpxctx *px, const ffstr *val);
 static int htpx_conf_reqhdrs(ffparser_schem *ps, htpxctx *px, ffpars_ctx *confctx);
 static int htpx_conf_resphdrs(ffparser_schem *ps, htpxctx *px, ffpars_ctx *confctx);
@@ -69,6 +70,11 @@ static int htpx_conf_end(ffparser_schem *ps, htpxctx *px);
 static void htpx_statustimer(const fftime *now, void *param);
 static void * htpx_newcon(fsv_httphandler *h);
 static int htpx_connect_allowed(fsv_httphandler *h);
+
+static int htpx_conf_denyurl(ffparser_schem *ps, htpxctx *px, const ffstr *val);
+static int htpx_htdenyurls_cmpkey(void *udata, const char *key, size_t keylen, void *param);
+static int htpx_htdenyurls_init(htpxctx *px);
+static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *logctx);
 
 static void htpx_chain_init(htpxcon *c);
 static int htpx_chain_process(htpxcon *c, htpxfilter **phf);
@@ -106,9 +112,11 @@ static const ffpars_arg htpxm_conf_args[] = {
 
 static const ffpars_arg htpx_conf_args[] = {
 	{ "connect_to",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FREQUIRED,  FFPARS_DST(&htpx_conf_connectto) }
+	, { "document_cache",  FFPARS_TOBJ,  FFPARS_DST(&htpx_conf_cache) }
 	, { "stream_response",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(htpxctx, stream_response) }
 	, { "response_body_buffer",  FFPARS_TSIZE | FFPARS_FNOTZERO,  FFPARS_DSTOFF(htpxctx, respbody_buf_size) }
 	, { "http_tunnel",  FFPARS_TENUM | FFPARS_F8BIT,  FFPARS_DST(&htpx_conf_tunnel) }
+	, { "deny_url",  FFPARS_TSTR | FFPARS_FLIST,  FFPARS_DST(&htpx_conf_denyurl) }
 	, { "try_next_server",  FFPARS_TSTR | FFPARS_FLIST,  FFPARS_DST(&htpx_conf_trynext) }
 	, { "pass_query_string",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(htpxctx, pass_query_string) }
 	, { "pass_client_headers",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(htpxctx, pass_client_hdrs) }
@@ -165,6 +173,16 @@ static int htpx_conf_connectto(ffparser_schem *ps, htpxctx *px, ffpars_ctx *conf
 	px->conctx = px->conn->newctx(confctx, &fsv_prox_connect_cb);
 	if (px->conctx == NULL)
 		return FFPARS_EBADVAL;
+	return 0;
+}
+
+static int htpx_conf_denyurl(ffparser_schem *ps, htpxctx *px, const ffstr *val)
+{
+	ffstr *denyurls = &px->denyurls;
+	if (val->ptr + val->len != ffs_findof(val->ptr, val->len, "*?", 2))
+		denyurls = &px->denyurls_wild;
+	if (NULL == ffbstr_push(denyurls, val->ptr, val->len))
+		return FFPARS_ESYS;
 	return 0;
 }
 
@@ -243,6 +261,31 @@ static int htpx_conf_trynext(ffparser_schem *ps, htpxctx *px, const ffstr *val)
 	return 0;
 }
 
+static int htpx_conf_cache(ffparser_schem *ps, htpxctx *px, ffpars_ctx *args)
+{
+	htcache_conf_newctx(&px->fcache, args);
+	return 0;
+}
+
+static int htpx_htdenyurls_init(htpxctx *px)
+{
+	ffbstr *bs;
+	uint hash;
+	size_t off = 0;
+
+	if (0 != ffhst_init(&px->htdenyurls, px->denyurls.len))
+		return 1;
+	px->htdenyurls.cmpkey = &htpx_htdenyurls_cmpkey;
+
+	while (NULL != (bs = ffbstr_next(px->denyurls.ptr, px->denyurls.len, &off, NULL))) {
+		hash = ffcrc32_get(bs->data, bs->len, 0);
+		if (ffhst_ins(&px->htdenyurls, hash, bs) < 0)
+			return 1;
+	}
+
+	return 0;
+}
+
 static int htpx_conf_end(ffparser_schem *ps, htpxctx *px)
 {
 	if (px->try_next_server == HTPX_NEXTSRV_DEF)
@@ -253,6 +296,8 @@ static int htpx_conf_end(ffparser_schem *ps, htpxctx *px)
 		px->req_host_static = 1;
 	}
 
+	if (px->denyurls.len != 0 && 0 != htpx_htdenyurls_init(px))
+		return FFPARS_ESYS;
 	return 0;
 }
 
@@ -277,6 +322,10 @@ static void htpxctx_free(htpxctx *px)
 {
 	if (!px->req_host_static)
 		ffstr_free(&px->req_host);
+
+	ffhst_free(&px->htdenyurls);
+	ffstr_free(&px->denyurls);
+	ffstr_free(&px->denyurls_wild);
 
 	ffstr_free(&px->conf_req_hdrs);
 	ffstr_free(&px->conf_resp_hdrs);
@@ -405,6 +454,40 @@ static int htpx_connect_allowed(fsv_httphandler *h)
 	return FFHTTP_SLAST;
 }
 
+static int htpx_htdenyurls_cmpkey(void *udata, const char *key, size_t keylen, void *param)
+{
+	const ffbstr *bs = udata;
+	return keylen == bs->len && ffs_cmp(key, bs->data, keylen);
+}
+
+/** Check whether it's allowed to connect to a requested host. */
+static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *logctx)
+{
+	ffstr host = ffhttp_requrl(req, FFURL_FULLHOST);
+	size_t off = 0;
+	ffstr wcard;
+	uint hash;
+
+	if ('.' == ffarr_back(&host))
+		host.len--; //remove the trailing dot in case the host is "host.com."
+
+	hash = ffcrc32_get(host.ptr, host.len, 0);
+	if (NULL != ffhst_find(&px->htdenyurls, hash, host.ptr, host.len, NULL))
+		goto denied;
+
+	while (0 != ffbstr_next(px->denyurls_wild.ptr, px->denyurls_wild.len, &off, &wcard)) {
+		if (0 == ffs_wildcard(wcard.ptr, wcard.len, host.ptr, host.len, 0))
+			goto denied;
+	}
+
+	return FFHTTP_SLAST;
+
+denied:
+	dbglog(logctx, FSV_LOG_DBGFLOW, "the requested URL is forbidden: %S"
+		, &host);
+	return FFHTTP_403_FORBIDDEN;
+}
+
 static void * htpx_newcon(fsv_httphandler *h)
 {
 	htpxctx *px = h->hctx;
@@ -413,6 +496,14 @@ static void * htpx_newcon(fsv_httphandler *h)
 
 	if (h->req->method == FFHTTP_CONNECT) {
 		st = htpx_connect_allowed(h);
+		if (st != FFHTTP_SLAST) {
+			ffhttp_setstatus(h->resp, st);
+			return NULL;
+		}
+	}
+
+	if (px->denyurls.len != 0 || px->denyurls_wild.len != 0) {
+		st = htpx_checkdeny(px, h->req, h->logctx);
 		if (st != FFHTTP_SLAST) {
 			ffhttp_setstatus(h->resp, st);
 			return NULL;
@@ -564,6 +655,7 @@ void htpx_accesslog(htpxcon *c)
 		"[%L+%U] \"%*s\"" //request
 		" [%L+%U] \"%S\"" //response
 		" %S \"%S\"" //additional info and "Server"
+		" cache:%s"
 		"  %Ums" //response time
 		//request:
 		, (size_t)c->req_hdrs.len, sent_body, (size_t)c->nreqline, c->req_hdrs.ptr
@@ -571,6 +663,7 @@ void htpx_accesslog(htpxcon *c)
 		, (size_t)c->resp.h.len, recvd_body, &status
 		, &addinfo
 		, &srvname
+		, (c->cach != NULL) ? htcache_status(c->cach) : ""
 		, fftime_ms(&stop));
 
 	ffarr_free(&addinfo);
@@ -728,6 +821,10 @@ done:
 
 	dbglog(c->logctx, FSV_LOG_HTTPFILT, "%s: done"
 		, FILT_TYPE(hf->reqfilt));
+
+	if (c->resp_fin)
+		c->px->client_http->send(c->hf, NULL, 0, 0);
+
 	return 1;
 }
 

@@ -67,11 +67,11 @@ extern void* http_loadfile(const char *fn, size_t *size);
 
 static int edocm_conf_template(ffparser_schem *ps, edoc_module *em, const ffstr *fn)
 {
-	char fn_s[FF_MAXPATH];
-	ssize_t r = edocm->core->getpath(fn_s, FFCNT(fn_s), fn->ptr, fn->len);
-	if (r == -1)
+	char *path = edocm->core->getpath(NULL, NULL, fn->ptr, fn->len);
+	if (path == NULL)
 		return FFPARS_EBADVAL;
-	edocm->template.ptr = (char*)http_loadfile(fn_s, &edocm->template.len);
+	edocm->template.ptr = (char*)http_loadfile(path, &edocm->template.len);
+	ffmem_free(path);
 	if (edocm->template.ptr == NULL)
 		return FFPARS_ESYS;
 	return 0;
@@ -79,11 +79,11 @@ static int edocm_conf_template(ffparser_schem *ps, edoc_module *em, const ffstr 
 
 static int edocx_conf_template(ffparser_schem *ps, edoc_ctx *ex, const ffstr *fn)
 {
-	char fn_s[FF_MAXPATH];
-	ssize_t r = edocm->core->getpath(fn_s, FFCNT(fn_s), fn->ptr, fn->len);
-	if (r == -1)
+	char *path = edocm->core->getpath(NULL, NULL, fn->ptr, fn->len);
+	if (path == NULL)
 		return FFPARS_EBADVAL;
-	ex->template.ptr = (char*)http_loadfile(fn_s, &ex->template.len);
+	ex->template.ptr = (char*)http_loadfile(path, &ex->template.len);
+	ffmem_free(path);
 	if (ex->template.ptr == NULL)
 		return FFPARS_ESYS;
 	return 0;

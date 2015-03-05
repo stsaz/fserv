@@ -107,11 +107,12 @@ struct httphost {
 /** Defines HTTP handler for a particular request path. */
 struct httptarget {
 	fflist_item sib;
-	ffstr path;
+	ffstr path; //full path or regexp
 
 	httphost *host;
 	fsv_logctx *logctx;
 	ffstr3 index;
+	fflist rxroutes; //httptarget[]
 
 	http_submod file_hdler;
 	http_submod dir_hdler;
@@ -168,6 +169,7 @@ struct httpcon {
 		, resp_fin :1
 		, respmain_fin :1
 		, keep_alive :1
+		, skshut :1 //socket was shut down
 		;
 
 	// request body:
@@ -199,6 +201,10 @@ enum HTTP_CONF_E {
 enum {
 	HTTP_LOG_READ_DATAWND = 16
 	, HTTP_MAX_RESPHDR = 4096
+};
+
+enum HTTP_TMR {
+	TMR_READHDR = 1, TMR_KEEPALIVE = 2, TMR_READBODY = 4, TMR_WRITE = 8
 };
 
 extern const fsv_http fsv_http_iface;

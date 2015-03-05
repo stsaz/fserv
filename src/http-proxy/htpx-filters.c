@@ -9,6 +9,13 @@ Copyright 2014 Simon Zolin.
 http-in -> connect -> send-req
 recv-resp -> parse-resp -> recv-body -> cont-len|chunked -> http-out
 
+CACHE, no-revalidate:
+http-in -> cache-req
+
+CACHE, full cycle:
+http-in -> cache-req -> connect -> send-req
+recv-resp -> parse-resp -> recv-body -> cont-len|chunked -> cache-resp -> http-out
+
 TUNNEL:
 http-in -> connect -> recv-io -> http-out
 send-io -> http-out
@@ -111,6 +118,22 @@ static const http_submod def_respfilts[] = {
 	, { "http-out", NULL, &htpx_out_filter }
 };
 
+static const http_submod def_cache_reqfilts[] = {
+	{ "http-in", NULL, &htpx_in_filter }
+	, { "cache-req", NULL, &htcache_req_htpfilt }
+	, { "connect", NULL, &htpx_connect_handler }
+	, { "send-req", NULL, &htpx_reqsend_handler }
+};
+static const http_submod def_cache_respfilts[] = {
+	{ "recv-resp", NULL, &htpx_resprecv_handler }
+	, { "parse-resp", NULL, &htpx_respparse_handler }
+	, { "recv-body", NULL, &htpx_recvbody_handler }
+	, { "cont-len", NULL, &htpx_contlen_recv_filter }
+	, { "chunked", NULL, &htpx_chunked_req_filter }
+	, { "cache-resp", NULL, &htcache_resp_htpfilt }
+	, { "http-out", NULL, &htpx_out_filter }
+};
+
 static const http_submod def_tunnel_reqfilts[] = {
 	{ "http-in", NULL, &htpx_in_filter }
 	, { "connect", NULL, &htpx_connect_handler }
@@ -129,6 +152,10 @@ void htpx_getreqfilters(htpxcon *c, const http_submod **sm, size_t *n)
 	if (c->tunnel) {
 		*sm = def_tunnel_reqfilts;
 		*n = FFCNT(def_tunnel_reqfilts);
+
+	} else if (c->px->fcache.cache != NULL) {
+		*sm = def_cache_reqfilts;
+		*n = FFCNT(def_cache_reqfilts);
 	}
 }
 
@@ -140,6 +167,10 @@ void htpx_getrespfilters(htpxcon *c, const http_submod **sm, size_t *n)
 	if (c->tunnel) {
 		*sm = def_tunnel_respfilts;
 		*n = FFCNT(def_tunnel_respfilts);
+
+	} else if (c->px->fcache.cache != NULL) {
+		*sm = def_cache_respfilts;
+		*n = FFCNT(def_cache_respfilts);
 	}
 }
 
@@ -477,6 +508,9 @@ static void htpx_addhdrs_fromclient(htpxcon *c, ffhttp_cook *req)
 		if (NULL != ffs_findc((char*)htpx_perconn_reqhdrs, FFCNT(htpx_perconn_reqhdrs), ihdr))
 			continue;
 
+		if (c->cach != NULL && htcache_ignorehdr(c->cach, ihdr))
+			continue;
+
 		ffhttp_addhdr_str(req, &k, &v);
 	}
 }
@@ -502,7 +536,8 @@ static int htpx_addreqhdrs_fromconf(htpxcon *c, ffhttp_cook *req, ffstr3 *tmp)
 	return FFERR_OK;
 }
 
-/** Prepare HTTP request. */
+/** Prepare HTTP request.
+Add conditional headers, if we have to revalidate our cached document. */
 static int htpx_mkreq(htpxcon *c, ffstr *dstbuf, uint64 cont_len)
 {
 	int er;
@@ -548,6 +583,9 @@ static int htpx_mkreq(htpxcon *c, ffstr *dstbuf, uint64 cont_len)
 
 	if (c->px->pass_client_hdrs)
 		htpx_addhdrs_fromclient(c, &req);
+
+	if (c->cach != NULL)
+		htcache_addhdr(c->cach, &req);
 
 	ret = htpx_addreqhdrs_fromconf(c, &req, &tmp);
 	if (ret != 0)
@@ -1148,6 +1186,7 @@ static void htpx_sendio(fsv_httphandler *h)
 		h->id->udata = (void*)1;
 
 		ffatom_inc(&htpxm->nrequests);
+		c->resp.h.conn_close = 1; //the connection in HTTP tunnel mode is not keep-alive
 	}
 
 	if (h->flags & FSV_HTTP_LAST) {
@@ -1158,7 +1197,7 @@ static void htpx_sendio(fsv_httphandler *h)
 		c->px->conn->fsv_getvarcz(c->serv_id, "socket_fd", &sk, sizeof(ffskt));
 		dbglog(c->logctx, FSV_LOG_DBGNET, "disconnecting...");
 		if (0 != ffskt_fin(sk))
-			syserrlog(c->logctx, FSV_LOG_ERR, "%e", FFERR_SKTSHUT);
+			errlog(c->logctx, FSV_LOG_WARN, "%e", FFERR_SKTSHUT);
 
 		h->http->send(h->id, NULL, 0, FSV_HTTP_DONE);
 		return;
@@ -1242,6 +1281,7 @@ static void htpx_readdata(void *udata)
 
 	if (r == FSV_IO_ESHUT) {
 		dbglog(c->logctx, FSV_LOG_DBGNET, "TCP FIN received");
+		c->resp_fin = 1;
 
 		if (c->clientresp->code == 0)
 			ffhttp_setstatus(c->clientresp, FFHTTP_200_OK);

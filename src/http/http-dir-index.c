@@ -165,11 +165,11 @@ void* http_loadfile(const char *fn, size_t *size)
 
 static int drixm_conf_template(ffparser_schem *ps, drix_module *mod, const ffstr *fn)
 {
-	char fn_s[FF_MAXPATH];
-	ssize_t r = drixm->core->getpath(fn_s, FFCNT(fn_s), fn->ptr, fn->len);
-	if (r == -1)
+	char *path = drixm->core->getpath(NULL, NULL, fn->ptr, fn->len);
+	if (path == NULL)
 		return FFPARS_EBADVAL;
-	drixm->template.ptr = (char*)http_loadfile(fn_s, &drixm->template.len);
+	drixm->template.ptr = (char*)http_loadfile(path, &drixm->template.len);
+	ffmem_free(path);
 	if (drixm->template.ptr == NULL)
 		return FFPARS_ESYS;
 	return 0;
@@ -177,12 +177,9 @@ static int drixm_conf_template(ffparser_schem *ps, drix_module *mod, const ffstr
 
 static int drix_conf_root(ffparser_schem *ps, drix_ctx *dx, const ffstr *dir)
 {
-	char path[FF_MAXPATH];
-	ssize_t r = drixm->core->getpath(path, FFCNT(path), dir->ptr, dir->len);
-	if (r == -1)
+	dx->root.ptr = drixm->core->getpath(NULL, &dx->root.len, dir->ptr, dir->len);
+	if (dx->root.ptr == NULL)
 		return FFPARS_EBADVAL;
-	if (NULL == ffstr_copy(&dx->root, path, r))
-		return FFPARS_ESYS;
 	return 0;
 }
 
@@ -346,9 +343,7 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 {
 	drix_ctx *dx = h->hctx;
 	drix_obj *o = NULL;
-	char fn_s[FF_MAXPATH];
-	size_t fnlen;
-	ffstr3 buf = {0};
+	ffstr3 fn = {0}, buf = {0};
 	ffstr reqpath;
 	direntries e = {0};
 	direntry *ent;
@@ -357,30 +352,28 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 
 	// get full filename
 	reqpath = ffhttp_reqpath(h->req);
-	fnlen = ffs_fmt(fn_s, fn_s + sizeof(fn_s), "%S%S%Z"
-		, &dx->root, &reqpath);
-	if (fnlen-- == sizeof(fn_s)) {
-		fsv_errlog(h->logctx, FSV_LOG_ERR, DRIX_MODNAME, NULL, "too large filename");
-		st = FFHTTP_400_BAD_REQUEST;
+	if (NULL == ffarr_alloc(&fn, dx->root.len + reqpath.len + FF_MAXFN + 1)) {
+		syserrlog(h->logctx, FSV_LOG_ERR, "%e", FFERR_BUFALOC);
 		goto fail;
 	}
+	fn.len = ffs_fmt(fn.ptr, fn.ptr + fn.cap, "%S%S%Z", &dx->root, &reqpath) - 1;
 
 	// search in cache
 	if (drixm->cache != NULL) {
 		fsv_cache_init(&ca);
 		ca.logctx = h->logctx;
-		ca.key = fn_s;
-		ca.keylen = fnlen;
+		ca.key = fn.ptr;
+		ca.keylen = fn.len;
 		if (FSV_CACH_OK == drixm->cache->fetch(drixm->cachectx, &ca, 0)) {
 			o = *(drix_obj**)ca.data;
 		}
 	}
 
-	e.dir = ffdir_open(fn_s, sizeof(fn_s), &e.de);
+	e.dir = ffdir_open(fn.ptr, fn.cap, &e.de);
 	if (e.dir == 0) {
 		if (fferr_nofile(fferr_last()))
 			st = FFHTTP_404_NOT_FOUND;
-		syserrlog(h->logctx, FSV_LOG_ERR, "%e: %s", FFERR_DIROPEN, fn_s);
+		syserrlog(h->logctx, FSV_LOG_ERR, "%e: %s", FFERR_DIROPEN, fn.ptr);
 		if (o != NULL)
 			drixm->cache->unref(&ca, FSV_CACH_UNLINK);
 		goto fail;
@@ -401,7 +394,8 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 	if (o != NULL) {
 		if (e.crc == o->crc) {
 			*po = o;
-			return FFHTTP_200_OK;
+			st = FFHTTP_200_OK;
+			goto done;
 		}
 
 		drixm->cache->unref(&ca, FSV_CACH_UNLINK);
@@ -416,7 +410,6 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 		if (0 != drix_html_additem(&buf, ent, 0))
 			goto fail;
 	}
-	dirents_free(&e);
 
 	o = ffmem_tcalloc1(drix_obj);
 	if (o == NULL) {
@@ -438,12 +431,16 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 	}
 
 	*po = o;
-	return FFHTTP_200_OK;
+	st = FFHTTP_200_OK;
+	goto done;
 
 fail:
-	dirents_free(&e);
-	ffarr_free(&buf);
 	*po = NULL;
+
+done:
+	dirents_free(&e);
+	ffarr_free(&fn);
+	ffarr_free(&buf);
 	return st;
 }
 

@@ -18,6 +18,9 @@ struct tester {
 	fsv_cachectx *cachctx;
 	fsv_cachectx *cachctx_multi;
 
+	const fsv_fcache *fcachmod;
+	fsv_cachectx *fcachctx;
+
 	const fsv_connect *conn;
 	fsv_conctx *conctx;
 	fsv_conn *conn_id;
@@ -48,6 +51,9 @@ extern void testm_runnext(tester *t);
 extern int test_cache(tester *t);
 extern int testm_conf_cache(ffparser_schem *ps, tester *t, ffpars_ctx *a);
 extern int testm_conf_cache_multi(ffparser_schem *ps, tester *t, ffpars_ctx *a);
+
+extern int test_fcache(tester *t);
+extern int testm_conf_fcache(ffparser_schem *ps, tester *t, ffpars_ctx *a);
 
 extern int test_connect(tester *t);
 extern int testm_conf_connect(ffparser_schem *ps, tester *t, ffpars_ctx *a);

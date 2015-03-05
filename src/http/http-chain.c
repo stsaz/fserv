@@ -137,7 +137,7 @@ static void http_chain_error(httpcon *c, httpfilter *hf)
 	/* We can send error response if:
 	. we haven't sent anything yet
 	. we aren't sending anything right now. */
-	if (c->nwrite == 0 && (hf->reqfilt || c->tmr_flags == 0) && !c->err) {
+	if (c->nwrite == 0 && (hf->reqfilt || !(c->tmr_flags & TMR_WRITE)) && !c->err) {
 		c->err = 1;
 
 		httpm->core->utask(&c->rtask, FSVCORE_TASKDEL);
@@ -175,11 +175,12 @@ static int http_mainhandler_process(httpcon *c, httpfilter **phf)
 		&& ((hf->flags & (FSV_HTTP_NOINPUT | FSV_HTTP_DONE | FSV_HTTP_ERROR))
 			|| !(hf->flags & (FSV_HTTP_MORE | FSV_HTTP_BACK)))) {
 
+		//main-handler doesn't want request body or it has no more output
 		c->respmain_fin = 1;
 
-		if (hf->sib.prev != NULL) {
-			/* main-handler doesn't want request body or it has no more output.
-			In either case we notify the previous filter. */
+		if ((hf->flags & (FSV_HTTP_NOINPUT | FSV_HTTP_DONE | FSV_HTTP_ERROR))
+			&& hf->sib.prev != NULL) {
+
 			fsv_taskpost(httpm->core, &c->rtask, &http_respchain_continue, hf);
 			hf = FF_GETPTR(httpfilter, sib, hf->sib.prev);
 			hf->fin = 1;

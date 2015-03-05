@@ -122,10 +122,6 @@ void http_get_def_respfilts(const http_submod **sm, size_t *n)
 }
 
 
-enum HTTP_TMR {
-	TMR_READHDR = 1, TMR_KEEPALIVE = 2, TMR_READBODY = 4, TMR_WRITE = 8
-};
-
 static void http_resettimer(httpcon *c, int t)
 {
 	int val = 0;
@@ -429,11 +425,22 @@ done:
 	h->http->send(h->id, NULL, 0, f);
 }
 
+/** Test regexps one by one. */
+static FFINL httptarget* http_findrxroute(const ffstr *path, httptarget *tgt)
+{
+	httptarget *rxtgt;
+	FFLIST_WALK(&tgt->rxroutes, rxtgt, sib) {
+		if (0 == ffs_regex(rxtgt->path.ptr, rxtgt->path.len, path->ptr, path->len, 0))
+			return rxtgt;
+	}
+	return tgt;
+}
+
 /** Look up the path in routing hash table.
 Note: in the worst-case scenario, we perform count('/')+1 attempts. */
 static httptarget* http_findroute(httpcon *c)
 {
-	ffstr path = ffhttp_reqpath(&c->req);
+	ffstr path = ffhttp_reqpath(&c->req), reqpath = path;
 	httptarget *tgt;
 	uint hash;
 	char *slash;
@@ -441,9 +448,16 @@ static httptarget* http_findroute(httpcon *c)
 	for (;;) {
 		hash = ffcrc32_get(path.ptr, path.len, FFCRC_ICASE);
 		tgt = ffhst_find(&c->host->hstroute, hash, path.ptr, path.len, NULL);
-		if (tgt != NULL
-			&& (tgt->ispath || path.len == ffhttp_reqpath(&c->req).len))
-			break;
+		if (tgt != NULL) {
+
+			if (tgt->ispath) {
+				ffstr_shift(&reqpath, path.len);
+				tgt = http_findrxroute(&reqpath, tgt);
+				break; //"path=/" or its "target_regex=.bc" matches URI "/abc"
+
+			} else if (path.len == reqpath.len)
+				break; //target "/abc" matches URI "/abc"
+		}
 
 		slash = ffs_rfind(path.ptr, path.len, '/');
 
@@ -463,6 +477,7 @@ static httptarget* http_findroute(httpcon *c)
 			path.len = slash - path.ptr;
 	}
 
+	//note: for "target_regex" only regexp is printed here (without the full path)
 	dbglog(c->logctx, FSV_LOG_DBGFLOW, "using route '%S'", &tgt->path);
 	return tgt;
 }
@@ -1085,6 +1100,7 @@ static void http_respsend(fsv_httphandler *h)
 		dbglog(h->logctx, FSV_LOG_DBGNET, "socket shutdown");
 		httpm->lisn->getvar(c->conn, FFSTR("socket_fd"), &sk, sizeof(ffskt));
 		ffskt_fin(sk);
+		c->skshut = 1;
 
 		fsv_http_iface.send(h->id, NULL, 0, FSV_HTTP_DONE);
 		return;

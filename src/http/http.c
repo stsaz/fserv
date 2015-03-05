@@ -184,6 +184,7 @@ static const ffpars_arg httgt_conf_args[] = {
 	, { "index",  FFPARS_TSTR | FFPARS_FLIST,  FFPARS_DST(&httgt_conf_index) }
 	, { "target",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FMULTI,  FFPARS_DST(httgt_conf_target) }
 	, { "path",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FMULTI,  FFPARS_DST(httgt_conf_target) }
+	, { "target_regex",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FMULTI,  FFPARS_DST(&httgt_conf_target) }
 
 	, { "handler",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&httgt_conf_handler) }
 	, { "file_handler",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&httgt_conf_handler) }
@@ -430,16 +431,25 @@ static int hthost_conf_target_ex(ffparser_schem *ps, httphost *h, ffpars_ctx *ar
 {
 	const ffstr *path = &ps->vals[0];
 	char *p;
-	size_t npath = path->len + ((parent != NULL) ? parent->path.len : 0);
+	size_t npath;
+	ffbool regex;
 	httptarget *tgt;
 
+	regex = !ffsz_cmp(ps->curarg->name, "target_regex");
+
+	npath = path->len + ((parent != NULL && !regex) ? parent->path.len : 0);
 	tgt = ffmem_calloc(1, sizeof(httptarget) + npath);
 	if (tgt == NULL)
 		return FFPARS_ESYS;
-	fflist_ins(&h->routes, &tgt->sib);
+	fflist_init(&tgt->rxroutes);
+
+	if (!regex)
+		fflist_ins(&h->routes, &tgt->sib);
+	else
+		fflist_ins(&parent->rxroutes, &tgt->sib);
 
 	p = tgt->path_s;
-	if (parent != NULL)
+	if (parent != NULL && !regex)
 		p = ffmem_copy(tgt->path_s, parent->path.ptr, parent->path.len);
 	ffmemcpy(p, path->ptr, path->len);
 	ffstr_set(&tgt->path, tgt->path_s, npath);
@@ -791,7 +801,7 @@ void http_close(httpcon *c)
 	fflist_rm(&httpm->cons, &c->sib);
 	{
 	int f = 0;
-	if (c->host->linger)
+	if (c->host->linger && !c->skshut)
 		f = FSV_LISN_LINGER;
 	httpm->lisn->fin(c->conn, f);
 	}
@@ -808,6 +818,7 @@ void http_close(httpcon *c)
 
 static void hstroute_free(httptarget *tgt)
 {
+	FFLIST_ENUMSAFE(&tgt->rxroutes, ffmem_free, httptarget, sib);
 	ffarr_free(&tgt->index);
 	ffmem_free(tgt);
 }
@@ -892,7 +903,7 @@ static int http_logaddv(fsv_logctx *lx, int lev, const char *modname, const ffst
 	ffstr omsg, host, req_line, saddr;
 	fsv_logctx *logctx = (c->tgt != NULL) ? c->tgt->logctx : c->host->logctx;
 
-	if ((lev & FSV_LOG_MASK) != FSV_LOG_ERR) {
+	if ((lev & FSV_LOG_MASK) != FSV_LOG_ERR && (lev & FSV_LOG_MASK) != FSV_LOG_WARN) {
 		fsv_logctx_get(logctx)->mlog->addv(logctx, lev, modname, &c->sid, fmt, va);
 		return 0;
 	}

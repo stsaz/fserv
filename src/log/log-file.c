@@ -45,12 +45,9 @@ static const ffpars_arg logf_args[] = {
 
 static int logf_conf_filename(ffparser_schem *ps, logfile *lf, const ffstr *s)
 {
-	ssize_t r = logm->srv->getpath(NULL, 0, s->ptr, s->len);
-	if (r == -1)
+	lf->fn.ptr = logm->srv->getpath(NULL, &lf->fn.len, s->ptr, s->len);
+	if (lf->fn.ptr == NULL)
 		return FFPARS_EBADVAL;
-	if (NULL == ffstr_alloc(&lf->fn, r))
-		return FFPARS_ESYS;
-	lf->fn.len = logm->srv->getpath(lf->fn.ptr, r, s->ptr, s->len);
 	return 0;
 }
 

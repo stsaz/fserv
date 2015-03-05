@@ -499,7 +499,7 @@ static void lsn_closecon(fsv_lsncon *c, int flags)
 			return;
 		}
 
-		lx_syserrlog(lx, FSV_LOG_ERR, "%S: %e", &c->saddr_peer, FFERR_SKTSHUT);
+		lx_syserrlog(lx, FSV_LOG_WARN, "%S: %e", &c->saddr_peer, FFERR_SKTSHUT);
 	}
 
 	lx->connected--;

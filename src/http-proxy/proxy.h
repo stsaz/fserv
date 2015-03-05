@@ -35,6 +35,16 @@ typedef struct htpxfilter {
 		, sentdata :1;
 } htpxfilter;
 
+
+typedef struct htpx_cach_ctx {
+	const fsv_fcache *cache;
+	fsv_cachectx *cachectx;
+	uint opts;
+} htpx_cach_ctx;
+
+typedef struct htcache htcache;
+
+
 typedef struct htpxmodule {
 	const fsv_core *core;
 	fsv_logctx *logctx;
@@ -63,6 +73,8 @@ typedef struct htpxctx {
 
 	const fsv_http *client_http;
 
+	htpx_cach_ctx fcache;
+
 	ffstr conf_req_hdrs; //ffbstr[]
 	ffstr req_host;
 	ffstr conf_resp_hdrs; //ffbstr[]
@@ -78,6 +90,10 @@ typedef struct htpxctx {
 	byte pass_client_hdrs;
 	unsigned conf_req_host :1
 		, req_host_static :1;
+
+	ffhstab htdenyurls;
+	ffstr denyurls; //ffbstr[]
+	ffstr denyurls_wild; //ffbstr[]
 } htpxctx;
 
 struct htpxcon {
@@ -126,6 +142,8 @@ struct htpxcon {
 	fsv_httpfilter *hfhttpin;
 	fsv_httpfilter *hfhttpout;
 
+	htcache *cach;
+
 	unsigned clientreq_fin :1 //request from parent module is completed
 		, req_fin :1
 		, resp_fin :1; //response is completed
@@ -157,6 +175,13 @@ extern void htpx_getrespfilters(htpxcon *c, const http_submod **sm, size_t *n);
 extern void htpx_onconnect(void *obj, int result);
 extern int htpx_mkresp(htpxcon *c, ffhttp_cook *cook, const ffhttp_response *resp);
 extern int htpx_freeconn(htpxcon *c, int nextsrv);
+
+extern const fsv_http_cb htcache_req_htpfilt;
+extern const fsv_http_cb htcache_resp_htpfilt;
+extern void htcache_conf_newctx(htpx_cach_ctx *px, ffpars_ctx *a);
+extern const char * htcache_status(htcache *c);
+extern ffbool htcache_ignorehdr(htcache *c, int ihdr);
+extern void htcache_addhdr(htcache *c, ffhttp_cook *req);
 
 enum HTPX_NEXTSRV {
 	HTPX_NEXTSRV_OFF

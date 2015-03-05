@@ -67,12 +67,9 @@ static int logz_conf_gzipbufsize(ffparser_schem *ps, loggzip *lz, const int64 *n
 
 static int logz_conf_file(ffparser_schem *ps, loggzip *lz, const ffstr *s)
 {
-	ssize_t r = logm->srv->getpath(NULL, 0, s->ptr, s->len);
-	if (r == -1)
+	lz->fn.ptr = logm->srv->getpath(NULL, &lz->fn.len, s->ptr, s->len);
+	if (lz->fn.ptr == NULL)
 		return FFPARS_EBADVAL;
-	if (NULL == ffstr_alloc(&lz->fn, r))
-		return FFPARS_ESYS;
-	lz->fn.len = logm->srv->getpath(lz->fn.ptr, r, s->ptr, s->len);
 	return 0;
 }
 

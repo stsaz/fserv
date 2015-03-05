@@ -36,6 +36,7 @@ FF_EXTN FF_EXP const fsv_mod * fsv_getmod(const char *name)
 const ffpars_arg testm_args[] = {
 	{ "cache",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&testm_conf_cache) }
 	, { "cache_multi",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&testm_conf_cache_multi) }
+	, { "fcache",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&testm_conf_fcache) }
 	, { "resolve",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&testm_conf_resolve) }
 	, { "connect",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&testm_conf_connect) }
 	, { "server",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&testm_conf_server) }
@@ -45,7 +46,7 @@ const ffpars_arg testm_args[] = {
 };
 
 static const test_func_t funcs[] = {
-	&test_cache, &test_listen, &test_http, &test_resolve, &test_connect, NULL
+	&test_cache, &test_fcache, &test_listen, &test_http, &test_resolve, &test_connect, NULL
 };
 
 static void * testm_create(const fsv_core *srv, ffpars_ctx *c, fsv_modinfo *m)

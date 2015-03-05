@@ -12,7 +12,7 @@ Copyright 2014 Simon Zolin.
 #include <FF/sendfile.h>
 
 
-#define FSV_VER "0.21"
+#define FSV_VER "0.22"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;
@@ -20,6 +20,7 @@ typedef struct fsv_mod fsv_mod;
 typedef struct fsv_log fsv_log;
 typedef struct fsv_logctx fsv_logctx;
 typedef struct fsv_cache fsv_cache;
+typedef struct fsv_fcache fsv_fcache;
 typedef struct fsv_listen fsv_listen;
 typedef struct fsv_connect fsv_connect;
 typedef struct fsv_resolver fsv_resolver;
@@ -93,13 +94,10 @@ typedef ssize_t (*fsv_getvar_t)(void *udata, const char *name, size_t namelen, v
 struct fsv_core {
 	const fsvcore_config * (*conf)(void);
 
-	/** Get local filesystem path.
-	If @dst is NULL, the function returns the maximum number of characters needed.
-	Return the number of characters written.
-		@dst will contain an absolute normalized path without the last slash, e.g. "/path/path2"
-		"/" is translated into ""
-	Return -1 on error. */
-	ssize_t (*getpath)(char *dst, size_t cap, const char *path, size_t len);
+	/** Get local filesystem path.  Allocate memory if needed.
+	Return an absolute normalized path without the last slash, e.g. "/path/path2"
+	Return NULL on error. */
+	char* (*getpath)(char *dst, size_t *dstlen, const char *path, size_t len);
 
 	/** Return NULL if not found. */
 	const fsv_modinfo * (*findmod)(const char *name, size_t namelen);
@@ -306,6 +304,74 @@ struct fsv_cache {
 	/** @flags: enum FSV_CACH_UNREF.
 	Return enum FSV_CACH_E. */
 	int (*unref)(fsv_cacheitem *ca, int flags);
+};
+
+/* ====================================================================== */
+
+typedef struct fsv_fcacheitem {
+	fsv_cacheitem_id *id;
+	uint hash[1];
+	fsv_logctx *logctx; //[in]
+	void *userptr;
+
+	size_t keylen;
+	const char *key;
+
+	uint64 len;
+	const void *data; //[in]
+	uint fdoff; //[out]
+	fffd fd; //[out]
+
+	size_t hdrlen;
+	const void *hdr;
+
+	uint64 total_size; //[in] reserve disk space
+	uint expire; //expiration time. 0 - default
+	uint cretm; //[out] creation time
+} fsv_fcacheitem;
+
+static FFINL void fsv_fcache_init(fsv_fcacheitem *fca) {
+	ffmem_tzero(fca);
+	fca->fd = FF_BADFD;
+}
+
+enum FSV_FCACH {
+	// store/update:
+	FSV_FCACH_LOCK = 1 //lock for update
+
+	// update:
+	, FSV_FCACH_UNLOCK = 2
+	, FSV_FCACH_APPEND = 4 //append data into file
+	, FSV_FCACH_REFRESH = 8 //only update "expire" value
+
+	// unref:
+	, FSV_FCACH_UNLINK = 1
+};
+
+typedef struct fsv_fcach_cb {
+	/**
+	@result: 0 on success. */
+	void (*onwrite)(void *userptr, fsv_fcacheitem *ca, int result);
+} fsv_fcach_cb;
+
+struct fsv_fcache {
+	fsv_cachectx * (*newctx)(ffpars_ctx *a, const fsv_fcach_cb *cb, int flags);
+
+	/** Return enum FSV_CACH_E. */
+	int (*fetch)(fsv_cachectx *ctx, fsv_fcacheitem *ca, int flags);
+
+	/** @flags: enum FSV_FCACH.
+	Return FSV_CACH_OK on success.  fsv_fcach_cb.onwrite() is called.
+	Return enum FSV_CACH_E. */
+	int (*store)(fsv_cachectx *ctx, fsv_fcacheitem *ca, int flags);
+
+	/** @flags: enum FSV_FCACH.
+	Return enum FSV_CACH_E. */
+	int (*update)(fsv_fcacheitem *ca, int flags);
+
+	/** @flags: enum FSV_FCACH.
+	Return enum FSV_CACH_E. */
+	int (*unref)(fsv_fcacheitem *ca, int flags);
 };
 
 /* ====================================================================== */

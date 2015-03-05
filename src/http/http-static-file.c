@@ -35,6 +35,7 @@ typedef struct stfl_ctx {
 	ffstr root;
 	int maxage;
 	ffstr indexes; //ffbstr[]
+	size_t read_ahead;
 } stfl_ctx;
 
 typedef struct stfl_obj {
@@ -112,6 +113,7 @@ static const ffpars_arg stflx_conf_args[] = {
 	{ "root",  FFPARS_TSTR | FFPARS_FNOTEMPTY | FFPARS_FREQUIRED,  FFPARS_DST(&stflx_conf_root) }
 	, { "max_age",  FFPARS_TINT,  FFPARS_DSTOFF(stfl_ctx, maxage) }
 	, { "index",  FFPARS_TSTR | FFPARS_FLIST | FFPARS_FNONULL,  FFPARS_DST(&stflx_conf_index) }
+	, { "read_ahead",  FFPARS_TSIZE | FFPARS_FNOTZERO,  FFPARS_DSTOFF(stfl_ctx, read_ahead) }
 };
 
 const ffpars_arg stfl_mime_conf_args[] = {
@@ -211,12 +213,9 @@ static int stfl_mime_conf_end(ffparser_schem *ps, void *unused)
 
 static int stflx_conf_root(ffparser_schem *ps, stfl_ctx *sx, const ffstr *dir)
 {
-	char path[FF_MAXPATH];
-	ssize_t r = stflm->core->getpath(path, FFCNT(path), dir->ptr, dir->len);
-	if (r == -1)
+	sx->root.ptr = stflm->core->getpath(NULL, &sx->root.len, dir->ptr, dir->len);
+	if (sx->root.ptr == NULL)
 		return FFPARS_EBADVAL;
-	if (NULL == ffstr_copy(&sx->root, path, r))
-		return FFPARS_ESYS;
 	return 0;
 }
 
@@ -502,25 +501,19 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	fffd f = FF_BADFD;
 	fffileinfo fi;
 	ffstr reqpath, fn_ext;
-	char fn_s[FF_MAXPATH];
-	int st;
-	size_t fnlen;
+	ffstr3 fn = {0};
+	int st = 0;
 	fsv_cacheitem ca;
 
 	// get full filename
 	reqpath = ffhttp_reqpath(h->req);
-	fnlen = ffs_fmt(fn_s, fn_s + sizeof(fn_s), "%S%S%Z"
-		, &sx->root, &reqpath);
-	if (fnlen-- == sizeof(fn_s)) {
-		fsv_errlog(h->logctx, FSV_LOG_ERR, STFL_MODNAME, NULL, "too large filename");
-		st = FFHTTP_400_BAD_REQUEST;
+	if (NULL == ffarr_alloc(&fn, sx->root.len + reqpath.len + FF_MAXFN + 1)) {
+		syserrlog(h->logctx, FSV_LOG_ERR, "%e", FFERR_BUFALOC);
 		goto fail;
 	}
+	fn.len = ffs_fmt(fn.ptr, fn.ptr + fn.cap, "%S%S%Z", &sx->root, &reqpath) - 1;
 
 	if ('/' == ffarr_back(&reqpath)) {
-		ffstr3 fn;
-
-		ffarr_set3(&fn, fn_s, fnlen, sizeof(fn_s));
 		o = NULL;
 		f = stfl_idx(h, &fn, &o, &fi, &ca);
 		if (f == FF_BADFD) {
@@ -529,7 +522,8 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 		}
 		if (o != NULL) {
 			*po = o;
-			return FFHTTP_200_OK;
+			st = FFHTTP_200_OK;
+			goto done;
 		}
 
 	} else {
@@ -537,26 +531,27 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 		if (stflm->cache != NULL) {
 			fsv_cache_init(&ca);
 			ca.logctx = h->logctx;
-			ca.key = fn_s;
-			ca.keylen = fnlen;
-			o = stfl_fromcache(&ca, fn_s, h->logctx);
+			ca.key = fn.ptr;
+			ca.keylen = fn.len;
+			o = stfl_fromcache(&ca, fn.ptr, h->logctx);
 			if (o != NULL) {
 				*po = o;
-				return FFHTTP_200_OK;
+				st = FFHTTP_200_OK;
+				goto done;
 			}
 		}
 
-		f = fffile_open(fn_s, O_RDONLY | O_NOATIME | FFO_NODOSNAME | O_NONBLOCK);
+		f = fffile_open(fn.ptr, O_RDONLY | O_NOATIME | FFO_NODOSNAME | O_NONBLOCK);
 		if (f == FF_BADFD) {
 			st = FFHTTP_500_INTERNAL_SERVER_ERROR;
 			if (fferr_nofile(fferr_last()))
 				st = FFHTTP_404_NOT_FOUND;
-			syserrlog(h->logctx, FSV_LOG_ERR, "%s: %e", fn_s, FFERR_FOPEN);
+			syserrlog(h->logctx, FSV_LOG_ERR, "%s: %e", fn.ptr, FFERR_FOPEN);
 			goto fail;
 		}
 
 		if (0 != fffile_info(f, &fi)) {
-			syserrlog(h->logctx, FSV_LOG_ERR, "get file info: %s", fn_s);
+			syserrlog(h->logctx, FSV_LOG_ERR, "get file info: %s", fn.ptr);
 			st = FFHTTP_403_FORBIDDEN;
 			goto fail;
 		}
@@ -580,8 +575,13 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	o->fid = fffile_infoid(&fi);
 	o->modtm = fffile_infomtime(&fi).s;
 
-	fn_ext = ffpath_fileext(fn_s, fnlen);
+	fn_ext = ffpath_fileext(fn.ptr, fn.len);
 	o->mime = stfl_findmime(&fn_ext);
+
+	if (sx->read_ahead != 0) {
+		if (0 != fffile_readahead(o->f, sx->read_ahead))
+			syserrlog(h->logctx, FSV_LOG_ERR, "%s", "file readahead");
+	}
 
 	if (stflm->cache != NULL) {
 		ca.data = (void*)&o;
@@ -595,12 +595,16 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	}
 
 	*po = o;
-	return FFHTTP_200_OK;
+	st = FFHTTP_200_OK;
+	goto done;
 
 fail:
 	if (f != FF_BADFD)
 		fffile_close(f);
 	*po = NULL;
+
+done:
+	ffarr_free(&fn);
 	return st;
 }
 

@@ -14,6 +14,7 @@ FF_SRC = \
 	$(FF)/FF/ffpath.c   \
 	$(FF)/FF/ffrbtree.c \
 	$(FF)/FF/ffstring.c \
+	$(FF)/FF/ffs-regex.c \
 	$(FF)/FF/ffsys.c    \
 	$(FF)/FF/fftime.c   \
 	$(FF)/FF/ffxml.c   \

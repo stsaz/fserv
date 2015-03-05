@@ -8,6 +8,7 @@ Copyright 2014 Simon Zolin
 #include <FF/path.h>
 #include <FF/filemap.h>
 #include <FF/conf.h>
+#include <FF/dir.h>
 #include <FFOS/process.h>
 #include <FFOS/sig.h>
 #include <FFOS/atomic.h>
@@ -108,7 +109,7 @@ FF_EXTN FF_EXP const fsv_main * fsv_getmain()
 
 // FSERV CORE
 static const fsvcore_config * srv_getconf(void);
-static ssize_t srv_getpath(char *dst, size_t dstsz, const char *path, size_t len);
+static char* srv_getpath(char *dst, size_t *dstlen, const char *path, size_t len);
 static fftime srv_gettime4(ffdtm *dt, char *dst, size_t cap, uint flags);
 static const fsv_modinfo * srv_findmod(const char *name, size_t namelen);
 static ssize_t srv_getvar(const char *name, size_t namelen, void *dst, size_t cap);
@@ -134,7 +135,8 @@ static int srv_conf_getpidfn(ffparser_schem *ps, fserver *srv);
 static int srv_conf_validate(ffparser_schem *ps, fserver *srv);
 
 static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod);
-static int srv_confinclude(ffparser_schem *ps);
+static int srv_confinclude_wild(ffparser_schem *ps, const ffstr *val);
+static int srv_confinclude(ffparser_schem *ps, const char *fn);
 static int srv_conf(const char *filename, ffparser_schem *ps);
 static int srv_start(void);
 static int srv_stop(int sig, fmodule *last);
@@ -309,28 +311,24 @@ static int srv_readconf(const char *fn)
 
 static int srv_conf_rootdir(ffparser_schem *ps, fserver *srv, const ffstr *s)
 {
-	char root[FF_MAXPATH];
-	size_t n;
-	ffstr3 fn = {0};
 	fffileinfo fi;
+	ffstr *root = &serv->rootdir;
 
-	n = ffpath_norm(root, FF_MAXPATH, s->ptr, s->len, 0);
-	if (n == 0)
+	if (NULL == ffstr_alloc(root, s->len + FFSLEN("/0")))
+		return FFPARS_ESYS;
+
+	root->len = ffpath_norm(root->ptr, s->len, s->ptr, s->len, 0);
+	if (root->len == 0)
 		return FFPARS_EBADVAL;
 
-	if (ffpath_slash(root[n - 1]))
-		n--; //rm last '/'
+	if (!ffpath_slash(root->ptr[root->len - 1]))
+		root->ptr[root->len++] = FFPATH_SLASH;
+	root->ptr[root->len] = '\0';
 
-	n = ffstr_catfmt(&fn, "%*s/%Z", n, root);
-	if (n == 0)
-		return FFPARS_ESYS;
-	ffstr_set(&serv->rootdir, fn.ptr, fn.len - 1);
-	ffarr_null(&fn);
-
-	if (0 != fffile_infofn(serv->rootdir.ptr, &fi))
+	if (0 != fffile_infofn(root->ptr, &fi))
 		return FFPARS_ESYS;
 
-	serv->cfg.root = serv->rootdir.ptr;
+	serv->cfg.root = root->ptr;
 	return 0;
 }
 
@@ -491,31 +489,16 @@ static int srv_conf_mod(ffparser_schem *ps, fserver *srv, ffpars_ctx *a)
 
 static int srv_conf_getpidfn(ffparser_schem *ps, fserver *srv)
 {
-	int r = FFPARS_ESYS;
-	ssize_t n;
-	ffstr3 pid;
-
-	ffstr_set2(&pid, &serv->pid_fn_conf);
-	pid.cap = serv->pid_fn_conf.len;
-	ffstr_null(&serv->pid_fn_conf);
-
+	ffstr pid_fn_conf = serv->pid_fn_conf;
+	ffstr pid = serv->pid_fn_conf;
 	if (pid.len == 0)
 		ffstr_setcz(&pid, "log/fserv.pid");
 
-	n = srv_getpath(NULL, 0, pid.ptr, pid.len);
-	if (n == -1) {
-		r = FFPARS_EBADVAL;
-		goto end;
-	}
-	if (NULL == ffstr_alloc(&serv->pid_fn, n))
-		goto end;
-
-	serv->pid_fn.len = srv_getpath(serv->pid_fn.ptr, n, pid.ptr, pid.len);
-	r = 0;
-
-end:
-	ffarr_free(&pid);
-	return r;
+	serv->pid_fn.ptr = srv_getpath(NULL, &serv->pid_fn.len, pid.ptr, pid.len);
+	ffstr_free(&pid_fn_conf);
+	if (serv->pid_fn.ptr == NULL)
+		return FFPARS_EBADVAL;
+	return 0;
 }
 
 static int srv_conf_validate(ffparser_schem *ps, fserver *srv)
@@ -528,37 +511,42 @@ static const fsvcore_config * srv_getconf(void)
 	return &serv->cfg;
 }
 
-static ssize_t srv_getpath(char *dst, size_t cap, const char *fn, size_t len)
+/** Get full path using value of "root" specified in configuration.
+The path is normalized.  The last slash is removed. */
+static char* srv_getpath(char *dst, size_t *dstlen, const char *fn, size_t len)
 {
+	ffbool isabs = 0, aloc = 0;
+	size_t cap = serv->rootdir.len + len + 1;
+
 	if (ffpath_abs(fn, len)) {
-		if (dst == NULL)
-			return len + 1;
-
-		if (cap < len)
-			return -1;
-		memcpy(dst, fn, len);
-
-	} else {
-		if (dst == NULL)
-			return serv->rootdir.len + len + 1;
-
-		len = ffs_fmt(dst, dst + cap, "%S%*s", &serv->rootdir, len, fn);
-		if (len == cap)
-			return -1;
+		isabs = 1;
+		cap = len + 1;
 	}
 
-	if (cap <= len)
-		return -1;
+	if (dst == NULL || *dstlen < cap) {
+		dst = ffmem_alloc(cap);
+		if (dst == NULL)
+			return NULL;
+		aloc = 1;
+	}
+
+	len = ffs_fmt(dst, dst + cap, "%*s%*s"
+		, (!isabs) ? serv->rootdir.len : (size_t)0, serv->rootdir.ptr, len, fn);
 
 	len = ffpath_norm(dst, cap, dst, len, FFPATH_STRICT_BOUNDS);
-	if (len == 0)
-		return -1;
+	if (len == 0) {
+		if (aloc)
+			ffmem_free(dst);
+		return NULL; //invalid path
+	}
 
-	if (dst[len - 1] == '/')
+	if (len != 1 && dst[len - 1] == '/')
 		len--;
 
 	dst[len] = '\0';
-	return len;
+	if (dstlen != NULL)
+		*dstlen = len;
+	return dst;
 }
 
 static const fsv_modinfo * srv_findmod(const char *name, size_t namelen)
@@ -819,17 +807,52 @@ static void srv_errsave(int syser, const char *fmt, ...)
 	ffstr_catfmt(&serv->errstk, ". ");
 }
 
-static int srv_confinclude(ffparser_schem *ps)
+static int srv_confinclude_wild(ffparser_schem *ps, const ffstr *val)
 {
-	char fn[FF_MAXPATH];
-	ffparser conf;
-	ffparser *old;
-	int rc;
-	if (-1 == srv_getpath(fn, FFCNT(fn), ps->p->val.ptr, ps->p->val.len)) {
+	int rc = 0;
+	size_t pathlen;
+	char *path;
+	const char *fn;
+	ffdirexp dex;
+
+	path = srv_getpath(NULL, &pathlen, val->ptr, val->len);
+	if (path == NULL) {
 		srv_errsave(-1, "invalid file name");
 		return FFPARS_ESYS;
 	}
 
+	if (path + pathlen == ffs_findof(path, pathlen, "?*", 2)) {
+		rc = srv_confinclude(ps, path);
+		ffmem_free(path);
+		return rc;
+	}
+
+	rc = ffdir_expopen(&dex, path, 0);
+	ffmem_free(path);
+	if (rc != 0) {
+		srv_errsave(-1, "could not expand files by a wildcard pattern");
+		return FFPARS_ESYS;
+	}
+
+	for (;;) {
+		fn = ffdir_expread(&dex);
+		if (fn == NULL)
+			break;
+
+		rc = srv_confinclude(ps, fn);
+		if (rc != 0)
+			break;
+	}
+
+	ffdir_expclose(&dex);
+	return rc;
+}
+
+static int srv_confinclude(ffparser_schem *ps, const char *fn)
+{
+	ffparser conf;
+	ffparser *old;
+	int rc;
 	ffconf_parseinit(&conf);
 	old = ps->p;
 	ps->p = &conf;
@@ -887,9 +910,9 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 					goto err;
 				}
 
-				r = srv_confinclude(ps);
+				r = srv_confinclude_wild(ps, &ps->p->val);
 				if (r != 0)
-					goto fail;
+					goto err;
 
 				continue;
 			}

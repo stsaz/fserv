@@ -26,7 +26,7 @@ static int conf_help(ffparser_schem *ps, void *obj);
 static const ffpars_enumlist conf_sigenum;
 
 static const char * ps_modulename(char *fnu, size_t cap, const char *argv0);
-static char * get_defconf(char *conf_fn, size_t cap, const char *argv0);
+static char * get_defconf(const char *argv0);
 static int args_parse(cmdline *opts, const char **argv, int argc);
 static fffd bgrun(const cmdline *opts);
 
@@ -126,9 +126,10 @@ static const char * ps_modulename(char *fnu, size_t cap, const char *argv0) {
 }
 #endif
 
-static char * get_defconf(char *conf_fn, size_t cap, const char *argv0)
+static char * get_defconf(const char *argv0)
 {
 	const char *fn;
+	ffstr3 conf_fn = {0};
 	ffstr path;
 	size_t r;
 	char fnu[FF_MAXPATH];
@@ -140,14 +141,14 @@ static char * get_defconf(char *conf_fn, size_t cap, const char *argv0)
 	}
 	ffpath_split2(fn, strlen(fn), &path, NULL);
 
-	r = ffs_fmt(conf_fn, conf_fn + cap, "%S/../conf/fserv.conf%Z"
-		, &path);
-	if (r == cap) {
-		flog_err("error", "too large filename");
+	r = ffstr_catfmt(&conf_fn, "%S/../conf/fserv.conf%Z", &path);
+	if (r == 0) {
+		ffarr_free(&conf_fn);
+		flog_err("error", "%e", FFERR_BUFALOC);
 		return NULL;
 	}
 
-	return conf_fn;
+	return conf_fn.ptr;
 }
 
 static int args_parse(cmdline *opts, const char **argv, int argc)
@@ -273,8 +274,7 @@ int main(int argc, const char **argv)
 	cmdline opts;
 	int ret = 1, st;
 	const fsv_main *fsv = NULL;
-	char conf_fn[FF_MAXPATH];
-	const char *conf;
+	char *conf;
 	fffd ps;
 
 	ffmem_tzero(&opts);
@@ -292,7 +292,7 @@ int main(int argc, const char **argv)
 	if (opts.conf_fn.len != 0)
 		conf = opts.conf_fn.ptr;
 	else {
-		conf = get_defconf(conf_fn, FFCNT(conf_fn), argv[0]);
+		conf = get_defconf(argv[0]);
 		if (conf == NULL)
 			return 1;
 	}
@@ -301,7 +301,7 @@ serve:
 	fsv = fsv_getmain();
 	if (NULL == fsv->create()) {
 		flog_errsys("error", "%s", "create server");
-		return 1;
+		goto fin;
 	}
 
 	if (0 != fsv->readconf(conf)) {
@@ -346,6 +346,8 @@ serve:
 	}
 
 fin:
+	if (conf != opts.conf_fn.ptr)
+		ffmem_free(conf);
 	if (fsv != NULL)
 		fsv->destroy();
 	return ret;
