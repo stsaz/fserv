@@ -4,7 +4,7 @@ Copyright 2014 Simon Zolin.
 
 #include <core/fserv.h>
 #include <FF/list.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 #include <FF/net/url.h>
 
 
@@ -317,12 +317,8 @@ static int lsnx_start(lisnctx *lx)
 	}
 	lx->acc_init = 1;
 
-	if (FFAIO_ASYNC != ffaio_acceptbegin(&lx->acc, &lsn_onaccept)) {
-		er = FFERR_SKTLISTEN;
-		goto fail;
-	}
-
 	lx_dbglog(lx, FSV_LOG_DBGFLOW, "started listener, socket %L", (size_t)lx->lsk);
+	fsv_taskpost(lsnm->core, &lx->task_accept, &lsn_onaccept, lx);
 	return 0;
 
 fail:
@@ -625,7 +621,7 @@ static int lsn_accept1(lisnctx *lx)
 		return 1;
 	}
 
-	c->sk = ffaio_accept(&lx->acc, &local, &peer, SOCK_NONBLOCK);
+	c->sk = ffaio_accept(&lx->acc, &local, &peer, SOCK_NONBLOCK, &lsn_onaccept);
 	if (c->sk == FF_BADSKT) {
 		int er = fferr_last();
 		lsn_recycle(c);
@@ -642,9 +638,6 @@ static int lsn_accept1(lisnctx *lx)
 		}
 
 		if (fferr_again(er)) {
-			if (FFAIO_ASYNC != ffaio_acceptbegin(&lx->acc, &lsn_onaccept)) {
-				lx_syserrlog(lx, FSV_LOG_ERR, "%e", FFERR_SKTLISTEN); //windows: the listener is dead
-			}
 			return 1;
 		}
 

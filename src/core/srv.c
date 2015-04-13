@@ -7,7 +7,7 @@ Copyright 2014 Simon Zolin
 #include <FF/time.h>
 #include <FF/path.h>
 #include <FF/filemap.h>
-#include <FF/conf.h>
+#include <FF/data/conf.h>
 #include <FF/dir.h>
 #include <FFOS/process.h>
 #include <FFOS/sig.h>
@@ -54,7 +54,7 @@ typedef struct fserver {
 	curtime_t time;
 
 	fftaskmgr taskmgr;
-	ffaio_task sigs_task;
+	ffsignal sigs_task;
 
 	int state;
 	fflist mods;
@@ -215,10 +215,7 @@ static void srv_destroy(void)
 	serv->mods.len = 0;
 
 	ffsig_ctl(&serv->sigs_task, serv->kq, sigs, FFCNT(sigs), NULL);
-	ffaio_fin(&serv->sigs_task);
-#ifdef FF_UNIX
 	ffsig_mask(SIG_UNBLOCK, sigs, FFCNT(sigs));
-#endif
 
 	fftmrq_destroy(&serv->tmrqu, serv->kq);
 	FF_SAFECLOSE(serv->kq, FF_BADFD, (void)ffkqu_close);
@@ -734,12 +731,10 @@ static int srv_readpid(void)
 
 static int srv_initsigs(void)
 {
-#ifdef FF_UNIX
 	if (0 != ffsig_mask(SIG_BLOCK, sigs, FFCNT(sigs)))
 		return FFERR_SYSTEM;
-#endif
 
-	ffaio_init(&serv->sigs_task);
+	ffsig_init(&serv->sigs_task);
 	if (0 != ffsig_ctl(&serv->sigs_task, serv->kq, sigs, FFCNT(sigs), &srv_handlesig))
 		return FFERR_SYSTEM;
 
@@ -755,15 +750,14 @@ static void srv_handlesig(void *t)
 	int sig = -1;
 	int r;
 
-	if (0 != ffaio_result(&serv->sigs_task)) {
-		syserrlog(FSV_LOG_ERR, "%s", "processing signals");
-		return;
-	}
-
 	for (;;) {
 		r = ffsig_read(&serv->sigs_task);
-		if (r == -1)
+
+		if (r == -1) {
+			if (!fferr_again(fferr_last()))
+				syserrlog(FSV_LOG_ERR, "%s", "processing signals");
 			break;
+		}
 
 		if (sig != -1)
 			continue;
@@ -1082,7 +1076,7 @@ static int srv_evloop(void)
 
 			for (i = 0;  i < nevents;  i++) {
 				ffkqu_entry *ev = &events.ptr[i];
-				ffaio_run1(ev);
+				ffkev_call(ev);
 
 				fftask_run(&serv->taskmgr);
 			}

@@ -5,7 +5,7 @@ Copyright 2014 Simon Zolin.
 #include <http/http.h>
 #include <FFOS/process.h>
 #include <FF/path.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 
 
 httpmodule *httpm;

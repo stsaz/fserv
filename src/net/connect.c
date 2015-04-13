@@ -4,7 +4,7 @@ Copyright 2014 Simon Zolin.
 
 #include <core/fserv.h>
 #include <FF/list.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 #include <FF/net/url.h>
 #include <FF/net/dns.h>
 

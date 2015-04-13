@@ -5,7 +5,7 @@ Copyright (c) 2014 Simon Zolin
 #include "log.h"
 #include <FFOS/error.h>
 #include <FFOS/process.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 
 
 // FSERV MODULE

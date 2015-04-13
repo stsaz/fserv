@@ -4,7 +4,7 @@ Copyright 2014 Simon Zolin.
 
 #include <core/fserv.h>
 #include <http/iface.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 #include <FF/list.h>
 
 

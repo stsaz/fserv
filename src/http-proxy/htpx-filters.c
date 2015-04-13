@@ -957,12 +957,6 @@ static void htpx_contlen_req(fsv_httphandler *h)
 		h->id->udata = (void*)1;
 	}
 
-	FF_ASSERT(body_recvd <= cont_len);
-	if (h->data->ht.hdr_cnt != 0) {
-		ffstr_setiovec(&body, &h->data->ht.headers[0]);
-		body.len = (size_t)ffmin64(body.len, cont_len - body_recvd);
-	}
-
 	if (h->data->ht.hdr_cnt != 0) {
 		ffstr_setiovec(&body, &h->data->ht.headers[0]);
 		if (body_recvd > cont_len)

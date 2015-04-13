@@ -63,6 +63,7 @@ static void test_fcache1(tester *t)
 	ca.hdr = "hdr3"; ca.hdrlen = 4;
 	ca.data = "dat3"; ca.len = 4;
 	x(0 == cach->update(&ca, 0));
+	ca.id = fcach_id;
 	x(0 == cach->unref(&ca, 0));
 
 	fcach_initscz(&ca, "key1");

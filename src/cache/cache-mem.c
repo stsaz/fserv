@@ -5,7 +5,7 @@ Copyright 2014 Simon Zolin.
 #include <core/fserv.h>
 #include <FF/rbtree.h>
 #include <FF/list.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 #include <FF/crc.h>
 #include <FFOS/file.h>
 

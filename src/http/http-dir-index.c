@@ -7,7 +7,7 @@ Copyright 2014 Simon Zolin.
 #include <FFOS/dir.h>
 #include <FF/time.h>
 #include <FF/crc.h>
-#include <FF/xml.h>
+#include <FF/data/xml.h>
 
 
 typedef struct drix_module {

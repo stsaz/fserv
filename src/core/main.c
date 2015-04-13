@@ -6,7 +6,7 @@ Copyright (c) 2014 Simon Zolin
 #include <FFOS/file.h>
 #include <FFOS/process.h>
 #include <FF/path.h>
-#include <FF/psarg.h>
+#include <FF/data/psarg.h>
 
 
 #define FSV_FULLNAME "fserv " FSV_VER " beta"

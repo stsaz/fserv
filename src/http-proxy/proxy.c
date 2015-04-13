@@ -5,7 +5,7 @@ Copyright 2014 Simon Zolin.
 #include <http-proxy/proxy.h>
 
 #include <FF/time.h>
-#include <FF/json.h>
+#include <FF/data/json.h>
 #include <FFOS/error.h>
 #include <FFOS/process.h>
 
