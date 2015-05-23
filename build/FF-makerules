@@ -20,6 +20,7 @@ FF_SRC = \
 	$(FF)/FF/data/ffjson.c  \
 	$(FF)/FF/data/ffxml.c   \
 	$(FF)/FF/data/ffparse.c \
+	$(FF)/FF/data/ffutf8.c  \
 	\
 	$(FF)/FF/net/ffdns.c\
 	$(FF)/FF/net/ffurl.c

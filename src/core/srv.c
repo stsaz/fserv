@@ -373,29 +373,6 @@ static int srv_conf_maxfd(ffparser_schem *ps, fserver *srv, const int64 *val) {
 	return 0;
 }
 
-/** Split string by a character.
-Return the position of 'second' in 's'. */
-static ssize_t str_split2(const char *s, size_t len, int by, ffstr *first, ffstr *second)
-{
-	const char *pos = ffs_findc(s, len, by);
-
-	if (pos == NULL) {
-		if (first != NULL)
-			ffstr_null(first);
-		if (second != NULL)
-			ffstr_set(second, s, len);
-		return -1;
-	}
-
-	if (first != NULL)
-		ffstr_set(first, s, pos - s);
-
-	pos++;
-	if (second != NULL)
-		ffstr_set(second, pos, s + len - pos);
-	return pos - s;
-}
-
 static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod)
 {
 	ffdl dl;
@@ -441,12 +418,12 @@ static int srv_conf_mod(ffparser_schem *ps, fserver *srv, ffpars_ctx *a)
 	fsv_getmod_t getmod;
 	int r;
 
-	str_split2(name->ptr, name->len, '.', &binfn, &modname);
+	ffs_split2by(name->ptr, name->len, '.', &binfn, &modname);
 
 	if (name->len > MAX_MOD_NAME)
 		return FFPARS_EBIGVAL;
 
-	if (binfn.len == 0) {
+	if (modname.len == 0) {
 		srv_errsave(-1, "module name is not specified: %S", name);
 		return FFPARS_EBADVAL;
 	}
@@ -1010,7 +987,7 @@ static int srv_start(void)
 		return 1;
 	}
 
-	srv_timer(&serv->tmr, serv->timer_resol, &curtime_update, &serv->time);
+	srv_timer(&serv->tmr, 1, &curtime_update, &serv->time);
 	fftime_now(&serv->time.time);
 
 #ifdef FF_WIN

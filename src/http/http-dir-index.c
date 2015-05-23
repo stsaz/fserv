@@ -292,8 +292,8 @@ static int dirents_fill(direntries *e)
 		ent->fi = *fi;
 
 		if (e->use_crc) {
-			ffcrc32_updatestr(&e->crc, ent->fn.ptr, ent->fn.len, 0);
-			ffcrc32_updatestr(&e->crc, (char*)fi, sizeof(ffdir_einfo), 0);
+			ffcrc32_updatestr(&e->crc, ent->fn.ptr, ent->fn.len);
+			ffcrc32_updatestr(&e->crc, (char*)fi, sizeof(ffdir_einfo));
 		}
 	}
 
