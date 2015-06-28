@@ -9,8 +9,8 @@ static int http_init_reqchain(httpcon *c);
 static void http_callmod(httpcon *c, httpfilter *hf);
 static void http_initfilter(httpcon *c, httpfilter *hf, const http_submod *sm);
 static void http_chain_error(httpcon *c, httpfilter *hf);
-static int http_mainhandler_process(httpcon *c, httpfilter **phf);
-static int http_chain_process(httpcon *c, httpfilter **phf);
+static int http_mainhandler_process(httpcon *c, httpfilter **phf, uint flags);
+static int http_chain_process(httpcon *c, httpfilter **phf, uint flags);
 static void http_finfilter(httpcon *c, httpfilter *hf);
 static void http_fin(httpcon *c);
 
@@ -27,78 +27,65 @@ void http_start(httpcon *c)
 	http_callmod(c, c->reqchain.ptr);
 }
 
+enum {
+	CHAIN_NOP = 1
+	, CHAIN_NEXT = 2
+};
+
 void http_send(fsv_httpfilter *_hf, const void *buf, size_t len, int flags)
 {
-	httpfilter *hf = (httpfilter*)_hf, *next;
+	httpfilter *hf = (httpfilter*)_hf;
 	httpcon *c = (httpcon*)hf->con;
+	int r = http_mainhandler_process(c, &hf, flags);
+	if (r == CHAIN_NOP)
+		return;
 
-	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
-		next = FF_GETPTR(httpfilter, sib, hf->sib.next);
-
-		ffsf_init(&next->input);
-		if (flags & FSV_HTTP_PASS) {
-			next->input = hf->input;
-		} else {
-			if (len != 0) {
-				ffiov_set(&next->iov, buf, len);
-				ffsf_sethdtr(&next->input.ht, &next->iov, 1, NULL, 0);
-			}
+	else if (r == CHAIN_NEXT && !(flags & FSV_HTTP_PASS)) {
+		if (len != 0) {
+			ffiov_set(&hf->iov, buf, len);
+			ffsf_sethdtr(&hf->input.ht, &hf->iov, 1, NULL, 0);
 		}
+		if (!(flags & FSV_HTTP_MORE))
+			ffsf_init(&((httpfilter*)_hf)->input);
 	}
 
-	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
-
-	if (0 != http_mainhandler_process(c, &hf))
-		return;
 	http_callmod(c, hf);
 }
 
 void http_sendv(fsv_httpfilter *_hf, ffiovec *iovs, size_t n, int flags)
 {
-	httpfilter *hf = (httpfilter*)_hf, *next;
+	httpfilter *hf = (httpfilter*)_hf;
 	httpcon *c = (httpcon*)hf->con;
+	int r = http_mainhandler_process(c, &hf, flags);
+	if (r == CHAIN_NOP)
+		return;
 
-	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
-		next = FF_GETPTR(httpfilter, sib, hf->sib.next);
-
-		ffsf_init(&next->input);
-		if (flags & FSV_HTTP_PASS) {
-			next->input = hf->input;
-		} else {
-			//note: there must be no empty iovec items, or ffsf_empty() won't work
-			ffsf_sethdtr(&next->input.ht, iovs, n, NULL, 0);
-		}
+	else if (r == CHAIN_NEXT && !(flags & FSV_HTTP_PASS)) {
+		//note: there must be no empty iovec items, or ffsf_empty() won't work
+		ffsf_sethdtr(&hf->input.ht, iovs, n, NULL, 0);
+		if (!(flags & FSV_HTTP_MORE))
+			ffsf_init(&((httpfilter*)_hf)->input);
 	}
 
-	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
-
-	if (0 != http_mainhandler_process(c, &hf))
-		return;
 	http_callmod(c, hf);
 }
 
 void http_sendfile(fsv_httpfilter *_hf, fffd fd, uint64 fsize, uint64 foffset, sf_hdtr *hdtr, int flags)
 {
-	httpfilter *hf = (httpfilter*)_hf, *next;
+	httpfilter *hf = (httpfilter*)_hf;
 	httpcon *c = (httpcon*)hf->con;
+	int r = http_mainhandler_process(c, &hf, flags);
+	if (r == CHAIN_NOP)
+		return;
 
-	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
-		next = FF_GETPTR(httpfilter, sib, hf->sib.next);
-
-		ffsf_init(&next->input);
-		if (flags & FSV_HTTP_PASS) {
-			next->input = hf->input;
-		} else {
-			fffile_mapset(&next->input.fm, httpm->pagesize, fd, foffset, fsize);
-			if (hdtr != NULL)
-				next->input.ht = *hdtr;
-		}
+	else if (r == CHAIN_NEXT && !(flags & FSV_HTTP_PASS)) {
+		fffile_mapset(&hf->input.fm, httpm->pagesize, fd, foffset, fsize);
+		if (hdtr != NULL)
+			hf->input.ht = *hdtr;
+		if (!(flags & FSV_HTTP_MORE))
+			ffsf_init(&((httpfilter*)_hf)->input);
 	}
 
-	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
-
-	if (0 != http_mainhandler_process(c, &hf))
-		return;
 	http_callmod(c, hf);
 }
 
@@ -120,7 +107,7 @@ static void http_respchain_continue(void *param)
 {
 	httpfilter *hf = param;
 	httpcon *c = hf->con;
-	if (0 != http_chain_process(c, &hf))
+	if (0 != http_chain_process(c, &hf, hf->flags))
 		return;
 	http_callmod(c, hf);
 }
@@ -167,9 +154,11 @@ static void http_chain_error(httpcon *c, httpfilter *hf)
 	http_close(c);
 }
 
-static int http_mainhandler_process(httpcon *c, httpfilter **phf)
+static int http_mainhandler_process(httpcon *c, httpfilter **phf, uint flags)
 {
 	httpfilter *hf = *phf;
+
+	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
 
 	if (hf->ismain
 		&& ((hf->flags & (FSV_HTTP_NOINPUT | FSV_HTTP_DONE | FSV_HTTP_ERROR))
@@ -189,15 +178,16 @@ static int http_mainhandler_process(httpcon *c, httpfilter **phf)
 		}
 	}
 
-	return http_chain_process(c, phf);
+	return http_chain_process(c, phf, flags);
 }
 
 /** Process the results of the previous call to a filter.
 Get the next filter in chain. */
-static int http_chain_process(httpcon *c, httpfilter **phf)
+static int http_chain_process(httpcon *c, httpfilter **phf, uint flags)
 {
 	httpfilter *hf = *phf;
-	fflist_item sib;
+	fflist_cursor cur;
+	uint r;
 
 	if (hf->flags & FSV_HTTP_ERROR) {
 		http_chain_error(c, hf);
@@ -208,46 +198,57 @@ static int http_chain_process(httpcon *c, httpfilter **phf)
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname
 		, (hf->flags & FSV_HTTP_BACK) != 0, (hf->flags & FSV_HTTP_MORE) != 0, (hf->flags & FSV_HTTP_DONE) != 0);
 
-	if (!(hf->flags & FSV_HTTP_MORE) || (hf->flags & FSV_HTTP_PASS))
-		ffsf_init(&hf->input);
+	if (flags & FSV_HTTP_BACK)
+		r = FFLIST_CUR_PREV;
+	else
+		r = FFLIST_CUR_NEXT | FFLIST_CUR_BOUNCE
+			| ((flags & FSV_HTTP_MORE) ? FFLIST_CUR_SAMEIFBOUNCE : 0);
 
-	if (hf->flags & FSV_HTTP_NOINPUT)
-		hf->sib.prev = NULL;
+	if (flags & FSV_HTTP_NOINPUT)
+		r |= FFLIST_CUR_RMPREV;
+	if (flags & FSV_HTTP_NONEXT)
+		r |= FFLIST_CUR_RMNEXT;
+	if (flags & FSV_HTTP_DONE)
+		r |= FFLIST_CUR_RM;
+	else if (!(flags & FSV_HTTP_MORE))
+		r |= FFLIST_CUR_RMFIRST;
 
-	sib = hf->sib;
+	cur = &hf->sib;
+	r = fflist_curshift(&cur, r, fflist_sentl(&cur));
 
-	if ((hf->flags & FSV_HTTP_DONE)
-		|| (sib.prev == NULL && !(hf->flags & FSV_HTTP_MORE)))
-		fflist_unlink(&hf->sib);
+	switch (r) {
+	case FFLIST_CUR_NONEXT:
+		goto done;
 
-	if (hf->flags & FSV_HTTP_BACK) {
-		if (sib.prev == NULL) {
-			errlog(c->logctx, FSV_LOG_ERR, "%s: no more input data for '%s'"
-				, FILT_TYPE(hf->reqfilt), hf->sm->modname);
-			http_chain_error(c, hf);
-			return 1;
+	case FFLIST_CUR_NOPREV:
+		errlog(c->logctx, FSV_LOG_ERR, "%s: no more input data for '%s'"
+			, FILT_TYPE(hf->reqfilt), hf->sm->modname);
+		http_chain_error(c, hf);
+		return CHAIN_NOP;
+
+	case FFLIST_CUR_NEXT:
+		*phf = FF_GETPTR(httpfilter, sib, cur);
+		(*phf)->flags |= (hf->flags & (FSV_HTTP_PUSH | FSV_HTTP_ASIS));
+
+		FF_ASSERT(ffsf_empty(&(*phf)->input));
+		if (flags & FSV_HTTP_PASS) {
+			(*phf)->input = hf->input;
+			ffsf_init(&hf->input);
 		}
-		goto prev;
 
-	} else if (sib.next == NULL) {
-		if (sib.prev == NULL)
-			goto done; //the chain completed successfully
-		goto prev;
+		return CHAIN_NEXT;
 	}
 
-	*phf = FF_GETPTR(httpfilter, sib, sib.next);
-	(*phf)->flags |= (hf->flags & (FSV_HTTP_PUSH | FSV_HTTP_ASIS));
-	return 0;
+	ffsf_init(&hf->input);
 
-prev:
 	// find the filter to the left that has more output data
-	hf = FF_GETPTR(httpfilter, sib, sib.prev);
 	for (;;) {
+		hf = FF_GETPTR(httpfilter, sib, cur);
 		if (hf->flags & FSV_HTTP_MORE) {
 			*phf = hf;
 			break;
 		}
-		hf = FF_GETPTR(httpfilter, sib, hf->sib.prev);
+		r = fflist_curshift(&cur, FFLIST_CUR_PREV, fflist_sentl(&cur));
 	}
 	hf->sentdata = 1;
 	return 0;

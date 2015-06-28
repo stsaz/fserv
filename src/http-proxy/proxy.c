@@ -77,7 +77,7 @@ static int htpx_htdenyurls_init(htpxctx *px);
 static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *logctx);
 
 static void htpx_chain_init(htpxcon *c);
-static int htpx_chain_process(htpxcon *c, htpxfilter **phf);
+static int htpx_chain_process(htpxcon *c, htpxfilter **phf, uint flags);
 static void htpx_chain_error(htpxcon *c, htpxfilter *hf);
 static void htpx_finfilter(htpxcon *c, htpxfilter *hf);
 static void htpx_chain_free(htpxcon *c);
@@ -695,54 +695,47 @@ void htpx_errlog(htpxcon *c, int lev, const char *fmt, ...)
 		, &omsg, &c->serv_host, &reqln, &status);
 }
 
+enum {
+	CHAIN_NOP = 1
+	, CHAIN_NEXT = 2
+};
+
 static void htpx_send(fsv_httpfilter *_hf, const void *buf, size_t len, int flags)
 {
-	htpxfilter *hf = (htpxfilter*)_hf, *next;
+	htpxfilter *hf = (htpxfilter*)_hf;
 	htpxcon *c = (htpxcon*)hf->con;
+	int r = htpx_chain_process(c, &hf, flags);
+	if (r == CHAIN_NOP)
+		return;
 
-	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
-		next = FF_GETPTR(htpxfilter, sib, hf->sib.next);
-
-		ffsf_init(&next->input);
-		if (flags & FSV_HTTP_PASS) {
-			next->input = hf->input;
-		} else {
-			if (len != 0) {
-				ffiov_set(&next->iov, buf, len);
-				ffsf_sethdtr(&next->input.ht, &next->iov, 1, NULL, 0);
-			}
+	else if (r == CHAIN_NEXT && !(flags & FSV_HTTP_PASS)) {
+		if (len != 0) {
+			ffiov_set(&hf->iov, buf, len);
+			ffsf_sethdtr(&hf->input.ht, &hf->iov, 1, NULL, 0);
 		}
+		if (!(flags & FSV_HTTP_MORE))
+			ffsf_init(&((htpxfilter*)_hf)->input);
 	}
 
-	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
-
-	if (0 != htpx_chain_process(c, &hf))
-		return;
 	htpx_callmod(c, hf);
 }
 
 static void htpx_sendfile(fsv_httpfilter *_hf, fffd fd, uint64 fsize, uint64 foffset, sf_hdtr *hdtr, int flags)
 {
-	htpxfilter *hf = (htpxfilter*)_hf, *next;
+	htpxfilter *hf = (htpxfilter*)_hf;
 	htpxcon *c = (htpxcon*)hf->con;
+	int r = htpx_chain_process(c, &hf, flags);
+	if (r == CHAIN_NOP)
+		return;
 
-	if (!(flags & FSV_HTTP_BACK) && hf->sib.next != NULL) {
-		next = FF_GETPTR(htpxfilter, sib, hf->sib.next);
-
-		ffsf_init(&next->input);
-		if (flags & FSV_HTTP_PASS) {
-			next->input = hf->input;
-		} else {
-			fffile_mapset(&next->input.fm, htpxm->page_size, fd, foffset, fsize);
-			if (hdtr != NULL)
-				next->input.ht = *hdtr;
-		}
+	else if (r == CHAIN_NEXT && !(flags & FSV_HTTP_PASS)) {
+		fffile_mapset(&hf->input.fm, htpxm->page_size, fd, foffset, fsize);
+		if (hdtr != NULL)
+			hf->input.ht = *hdtr;
+		if (!(flags & FSV_HTTP_MORE))
+			ffsf_init(&((htpxfilter*)_hf)->input);
 	}
 
-	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
-
-	if (0 != htpx_chain_process(c, &hf))
-		return;
 	htpx_callmod(c, hf);
 }
 
@@ -754,10 +747,13 @@ static void htpx_chain_error(htpxcon *c, htpxfilter *hf)
 	c->px->client_http->send(c->hf, NULL, 0, FSV_HTTP_ERROR);
 }
 
-static int htpx_chain_process(htpxcon *c, htpxfilter **phf)
+static int htpx_chain_process(htpxcon *c, htpxfilter **phf, uint flags)
 {
 	htpxfilter *hf = *phf;
-	fflist_item sib;
+	fflist_cursor cur;
+	uint r;
+
+	hf->flags = flags | (hf->flags & (FSV_HTTP_ASIS | FSV_HTTP_PUSH));
 
 	if (hf->flags & FSV_HTTP_ERROR) {
 		htpx_chain_error(c, hf);
@@ -768,49 +764,57 @@ static int htpx_chain_process(htpxcon *c, htpxfilter **phf)
 		, FILT_TYPE(hf->reqfilt), hf->sm->modname
 		, (hf->flags & FSV_HTTP_BACK) != 0, (hf->flags & FSV_HTTP_MORE) != 0, (hf->flags & FSV_HTTP_DONE) != 0);
 
-	if (!(hf->flags & FSV_HTTP_MORE) || (hf->flags & FSV_HTTP_PASS))
-		ffsf_init(&hf->input);
+	if (flags & FSV_HTTP_BACK)
+		r = FFLIST_CUR_PREV;
+	else
+		r = FFLIST_CUR_NEXT | FFLIST_CUR_BOUNCE
+			| ((flags & FSV_HTTP_MORE) ? FFLIST_CUR_SAMEIFBOUNCE : 0);
 
-	if (hf->flags & FSV_HTTP_NOINPUT)
-		hf->sib.prev = NULL;
+	if (flags & FSV_HTTP_NOINPUT)
+		r |= FFLIST_CUR_RMPREV;
+	if (flags & FSV_HTTP_NONEXT)
+		r |= FFLIST_CUR_RMNEXT;
+	if (flags & FSV_HTTP_DONE)
+		r |= FFLIST_CUR_RM;
+	else if (!(flags & FSV_HTTP_MORE))
+		r |= FFLIST_CUR_RMFIRST;
 
-	if (hf->flags & FSV_HTTP_NONEXT)
-		hf->sib.next = NULL;
+	cur = &hf->sib;
+	r = fflist_curshift(&cur, r, fflist_sentl(&cur));
 
-	sib = hf->sib;
+	switch (r) {
+	case FFLIST_CUR_NONEXT:
+		goto done;
 
-	if ((hf->flags & FSV_HTTP_DONE)
-		|| (sib.prev == NULL && !(hf->flags & FSV_HTTP_MORE)))
-		fflist_unlink(&hf->sib);
+	case FFLIST_CUR_NOPREV:
+		errlog(c->logctx, FSV_LOG_ERR, "%s: no more input data for '%s'"
+			, FILT_TYPE(hf->reqfilt), hf->sm->modname);
+		htpx_chain_error(c, hf);
+		return CHAIN_NOP;
 
-	if (hf->flags & FSV_HTTP_BACK) {
-		if (sib.prev == NULL) {
-			errlog(c->logctx, FSV_LOG_ERR, "%s: no more input data for '%s'"
-				, FILT_TYPE(hf->reqfilt), hf->sm->modname);
-			htpx_chain_error(c, hf);
-			return 1;
+	case FFLIST_CUR_NEXT:
+		*phf = FF_GETPTR(htpxfilter, sib, cur);
+		(*phf)->flags |= (hf->flags & (FSV_HTTP_PUSH | FSV_HTTP_ASIS));
+
+		FF_ASSERT(ffsf_empty(&(*phf)->input));
+		if (flags & FSV_HTTP_PASS) {
+			(*phf)->input = hf->input;
+			ffsf_init(&hf->input);
 		}
-		goto prev;
 
-	} else if (sib.next == NULL) {
-		if (sib.prev == NULL)
-			goto done; //the chain completed successfully
-		goto prev;
+		return CHAIN_NEXT;
 	}
 
-	*phf = FF_GETPTR(htpxfilter, sib, sib.next);
-	(*phf)->flags |= (hf->flags & (FSV_HTTP_PUSH | FSV_HTTP_ASIS));
-	return 0;
+	ffsf_init(&hf->input);
 
-prev:
 	// find the filter to the left that has more output data
-	hf = FF_GETPTR(htpxfilter, sib, sib.prev);
 	for (;;) {
+		hf = FF_GETPTR(htpxfilter, sib, cur);
 		if (hf->flags & FSV_HTTP_MORE) {
 			*phf = hf;
 			break;
 		}
-		hf = FF_GETPTR(htpxfilter, sib, hf->sib.prev);
+		r = fflist_curshift(&cur, FFLIST_CUR_PREV, fflist_sentl(&cur));
 	}
 	hf->sentdata = 1;
 	return 0;
