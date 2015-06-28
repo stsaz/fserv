@@ -365,7 +365,7 @@ static void htpx_in(fsv_httphandler *h)
 	c->hfhttpin = h->id;
 
 	if (h->flags & FSV_HTTP_SENT) {
-		c->px->client_http->send(c->hf, NULL, 0, FSV_HTTP_BACK);
+		c->px->client_http->send(c->hf, NULL, 0, FSV_HTTP_BACK | ((c->resp_fin) ? 0 : FSV_HTTP_MORE));
 		return;
 	}
 
