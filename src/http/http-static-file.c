@@ -575,7 +575,7 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	o->fid = fffile_infoid(&fi);
 	o->modtm = fffile_infomtime(&fi).s;
 
-	ffs_rsplit2by(fn.ptr, fn.len, '.', NULL, &fn_ext);
+	ffpath_splitname(fn.ptr, fn.len, NULL, &fn_ext);
 	o->mime = stfl_findmime(&fn_ext);
 
 	if (sx->read_ahead != 0) {
