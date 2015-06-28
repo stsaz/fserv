@@ -463,7 +463,7 @@ static int htpx_htdenyurls_cmpkey(void *udata, const char *key, size_t keylen, v
 /** Check whether it's allowed to connect to a requested host. */
 static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *logctx)
 {
-	ffstr host = ffhttp_requrl(req, FFURL_FULLHOST);
+	ffstr host = ffhttp_requrl(req, FFURL_HOST);
 	size_t off = 0;
 	ffstr wcard;
 	uint hash;
