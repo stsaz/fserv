@@ -86,7 +86,7 @@ static int testm_sig(int sig)
 	return 0;
 }
 
-#ifdef FF_MSVC
+#if defined FF_MSVC || defined FF_MINGW
 enum {
 	SIGINT = 1
 };

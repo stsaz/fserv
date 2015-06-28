@@ -11,57 +11,57 @@ all: $(FF_OBJ_DIR) $(FSV_BIN) $(MOD_ALL)
 SOURCES = $(wildcard $(FSV_SRCDIR)/core/*.c)
 FSV_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(SOURCES)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/core/%.c $(FSERV_H)
-	$(C)  $(CFLAGS) $<  $(O)$@
+	$(C)  $(CFLAGS) $<  -o$@
 $(FSV_BIN): $(FSV_OBJ) $(FF_ALL_OBJS)
-	$(LD)  $(FF_ALL_OBJS) $(FSV_OBJ) $(LDFLAGS) $(FSV_LDFLAGS)  $(O_LD)$@
+	$(LD)  $(FF_ALL_OBJS) $(FSV_OBJ) $(LDFLAGS) $(LD_LDL)  -o$@
 
 
 MOD_LOG_SRC = $(wildcard $(FSV_SRCDIR)/log/*.c)
 MOD_LOG_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_LOG_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/log/%.c $(FSERV_H)
-	$(C)  $(CFLAGS) $<  $(O)$@
+	$(C)  $(CFLAGS) $<  -o$@
 log.$(SO): $(MOD_LOG_OBJ) $(FF_ALL_OBJS)
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_LOG_OBJ) $(LDFLAGS) $(MOD_LOG_LDFLAGS) $(ZLIB)  $(O_LD)$@
+	$(LD)  -shared $(FF_ALL_OBJS) $(MOD_LOG_OBJ) $(LDFLAGS) $(MOD_LOG_LDFLAGS) $(ZLIB)  -o$@
 
 
 MOD_CACHE_SRC = $(wildcard $(FSV_SRCDIR)/cache/*.c)
 MOD_CACHE_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_CACHE_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/cache/%.c $(FSERV_H)
-	$(C)  $(CFLAGS)  $<  $(O)$@
+	$(C)  $(CFLAGS)  $<  -o$@
 cache.$(SO): $(MOD_CACHE_OBJ) $(FF_ALL_OBJS)
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_CACHE_OBJ) $(LDFLAGS) $(MOD_CACHE_LDFLAGS)  $(O_LD)$@
+	$(LD)  -shared $(FF_ALL_OBJS) $(MOD_CACHE_OBJ) $(LDFLAGS) $(MOD_CACHE_LDFLAGS)  -o$@
 
 
 MOD_NET_SRC = $(wildcard $(FSV_SRCDIR)/net/*.c)
 MOD_NET_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_NET_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/net/%.c $(FSERV_H)
-	$(C)  $(CFLAGS)  $<  $(O)$@
+	$(C)  $(CFLAGS)  $<  -o$@
 net.$(SO): $(MOD_NET_OBJ) $(FF_ALL_OBJS)
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_NET_OBJ) $(LDFLAGS) $(MOD_NET_LDFLAGS)  $(O_LD)$@
+	$(LD)  -shared $(FF_ALL_OBJS) $(MOD_NET_OBJ) $(LDFLAGS) $(MOD_NET_LDFLAGS)  -o$@
 
 
 MOD_HTTP_SRC = $(wildcard $(FSV_SRCDIR)/http/*.c)
 MOD_HTTP_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_HTTP_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http/%.c $(wildcard $(FSV_SRCDIR)/http/*.h) $(FSERV_H)
-	$(C)  $(CFLAGS)  $<  $(O)$@
+	$(C)  $(CFLAGS)  $<  -o$@
 http.$(SO): $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ)
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(MOD_HTTP_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_HTTP_LDFLAGS) $(ZLIB)  $(O_LD)$@
+	$(LD)  -shared $(FF_ALL_OBJS) $(MOD_HTTP_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_HTTP_LDFLAGS) $(ZLIB)  -o$@
 
 
 MOD_PROXY_SRC = $(wildcard $(FSV_SRCDIR)/http-proxy/*.c)
 MOD_PROXY_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_PROXY_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http-proxy/%.c $(wildcard $(FSV_SRCDIR)/http-proxy/*.h) $(FSERV_H)
-	$(C)  $(CFLAGS)  $<  $(O)$@
+	$(C)  $(CFLAGS)  $<  -o$@
 http-proxy.$(SO): $(MOD_PROXY_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ)
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(MOD_PROXY_OBJ) $(LDFLAGS) $(MOD_HTTPPROXY_LDFLAGS)  $(O_LD)$@
+	$(LD)  -shared $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(MOD_PROXY_OBJ) $(LDFLAGS) $(MOD_HTTPPROXY_LDFLAGS)  -o$@
 
 
 MOD_TEST_SRC = $(wildcard $(FSV_SRCDIR)/test/*.c)
 MOD_TEST_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_TEST_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/test/%.c $(FSERV_H)
-	$(C)  $(CFLAGS)  $<  $(O)$@
+	$(C)  $(CFLAGS)  $<  -o$@
 test.$(SO): $(MOD_TEST_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) $(FF_OBJ_DIR)/fftest.o
-	$(LD)  $(SHARED) $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o $(MOD_TEST_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_TEST_LDFLAGS)  $(O_LD)$@
+	$(LD)  -shared $(FF_ALL_OBJS) $(FF_OBJ_DIR)/fftest.o $(MOD_TEST_OBJ) $(FF_HTTP_OBJ) $(LDFLAGS) $(MOD_TEST_LDFLAGS)  -o$@
 
 
 preinstall: all
@@ -69,7 +69,7 @@ preinstall: all
 		$(RUNDIR)/www
 	$(CP) $(FSV_SRCDIR)/../conf/* $(RUNDIR)/conf/
 	$(CP) *.$(SO) $(RUNDIR)/mod/
-	$(CP) $(ZDLL) $(RUNDIR)/mod/$(LIBZSO)
+	$(CP) $(FSV_SRCDIR)/../README.txt $(RUNDIR)/
 
 # http
 	$(CP) $(FSV_SRCDIR)/../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
@@ -81,7 +81,7 @@ preinstall: all
 clean:
 	rm -vf \
 		$(FSV_BIN) $(MOD_ALL) test.$(SO) \
-		$(FSV_EXOBJS) *.o
+		*.debug *.o
 	rm -vfr $(FF_OBJ) $(FF_OBJ_DIR)
 
 distclean: clean

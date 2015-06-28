@@ -1,13 +1,10 @@
-# fserv v0.17 makefile
+# fserv v0.24 makefile
 
-OSTYPE = unix
 OS = linux
+
 FSV_BIN = fserv
-SO = so
 FSV_SRCDIR = ../src
-ARCH = 64
-TARGET = amd64
-RUNDIR=../run
+RUNDIR := ../fserv
 VER =
 
 FFOS = ../../ffos
@@ -15,33 +12,65 @@ FFOS_OBJ_DIR = ./ff-obj
 
 FF = ../../ff
 FF_OBJ_DIR = $(FFOS_OBJ_DIR)
-ZLIB = $(FF)/3pt/z/libz-$(OS)$(ARCH).so.1.2.8
-ZDLL = $(ZLIB)
-LIBZSO = libz.so.1
 
-CP = cp -u -v -p
-PACK = tar --owner=0 --group=0 --numeric-owner -cJv
+
+OSTYPE := unix
+ifeq ($(OS),win)
+OSTYPE := wint
+endif
+
+# set initial values for:
+# . linux/bsd/windows
+# . gcc
+# . packaging: tar.xz/zip
+ifeq ($(OSTYPE),unix)
+
+TARGET := amd64
+override CFLAGS += -fpic -DFF_OLDLIBC
+override LDFLAGS += -lrt
+SO := so
+PACK_EXT := tar.xz
+
+ifeq ($(OS),linux)
+
+LD_LDL := -ldl
+CP := cp -u -v -p
+PACK := tar --owner=0 --group=0 --numeric-owner -cJv -f
+
+else #bsd:
+
+CP := cp -v
+PACK := tar --uid=0 --gid=0 --numeric-owner -cJv -f
+
+endif
+
+else #windows:
+
+TARGET := x64
+LDFLAGS := -lws2_32
+SO := dll
+CP := cp -u -v -p
+PACK := zip -9 -r -v
+PACK_EXT := zip
+
+endif
+
 
 C = gcc
-O = -o
 LD = gcc
-O_LD = -o
-SHARED = -shared
 OPT = -O2
-DBG = -g
 # -D_DEBUG
 
-override CFLAGS += -c $(OPT) $(DBG) -Wall -Werror -pthread \
-	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) \
+override CFLAGS += -c $(OPT) -g -Wall -Werror -pthread \
+	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) -I$(FF)/3pt \
 	-ffunction-sections -fdata-sections  -fvisibility=hidden -fno-exceptions
 
-override LDFLAGS += -lrt -pthread \
+override LDFLAGS += -pthread \
 	-fvisibility=hidden \
 	-Wl,-gc-sections
 
-FSV_LDFLAGS = -ldl
-
-FSV_EXOBJS = *.debug
+# 3-party libraries
+ZLIB := -lz
 
 include ./makerules
 
@@ -49,15 +78,21 @@ strip-debug: all
 	sh strip-debug.sh $(FSV_BIN) $(MOD_ALL)
 
 install: all preinstall
+ifeq ($(OSTYPE),unix)
 	$(CP) fserv-exec-unix $(RUNDIR)/sbin/fserv
 	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/$(FSV_BIN)-bin
-	$(CP) $(FSV_SRCDIR)/../README.txt $(RUNDIR)/README
 
 	chmod 755 $(RUNDIR)/sbin/fserv $(RUNDIR)/sbin/$(FSV_BIN)-bin
 	chmod 644 $(RUNDIR)/mod/*.$(SO)
 
+else #windows:
+	$(CP) fserv-exec-win.cmd $(RUNDIR)/sbin/fserv.cmd
+	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/fserv-bin.exe
+	$(CP) ./*_fserv.cmd $(RUNDIR)/
+
+endif
+
 package: all install
-	mv $(RUNDIR) ../fserv
-	cd ..  &&  rm -f fserv-$(VER)-$(OS)-$(TARGET).tar.xz \
-		&& $(PACK) -f fserv-$(VER)-$(OS)-$(TARGET).tar.xz ./fserv
-	mv ../fserv $(RUNDIR)
+	cd .. \
+		&&  rm -f fserv-$(VER)-$(OS)-$(TARGET).$(PACK_EXT) \
+		&&  $(PACK) fserv-$(VER)-$(OS)-$(TARGET).$(PACK_EXT) ./fserv

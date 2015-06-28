@@ -199,7 +199,7 @@ static void mod_destroy(fmodule *m)
 	ffmem_free(m);
 }
 
-#ifdef FF_MSVC
+#if defined FF_MSVC || defined FF_MINGW
 enum {
 	SIGINT = 1
 	, SIGHUP

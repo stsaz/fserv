@@ -35,13 +35,13 @@ FF_HTTP_OBJ = $(FF_OBJ_DIR)/ffhttp.o
 
 
 $(FF_OBJ_DIR)/%.o: $(FF)/FF/%.c $(FF_HDR)
-	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@
+	$(C) $(CFLAGS)  $< -o$@
 
 $(FF_OBJ_DIR)/%.o: $(FF)/FF/net/%.c $(FF_HDR)
-	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@
+	$(C) $(CFLAGS)  $< -o$@
 
 $(FF_OBJ_DIR)/%.o: $(FF)/FF/data/%.c $(FF_HDR)
-	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@
+	$(C) $(CFLAGS)  $< -o$@
 
 $(FF_OBJ_DIR)/%.o: $(FFOS)/FFOS/%.c
-	$(C) $(CFLAGS) $(C1FLAGS) $< $(O)$@
+	$(C) $(CFLAGS)  $< -o$@
