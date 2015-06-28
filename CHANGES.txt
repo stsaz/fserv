@@ -1,0 +1,386 @@
+fserv v0.24 - June 26, 2015
+
+ - http-proxy: HTTP connection with a client could hang if more input data is received while output data is still being sent
+ - http-proxy: "deny_urls" didn't work properly
+
+
+fserv v0.23 - Apr 13, 2015
+
+ * broadcast: speed up sending data to a client by combining metadata and payload more effectively
+ - fcache-test: fix usage of asynchronous update()
+ - http-proxy: fix content-length filter
+
+
+fserv v0.22 - Mar 6, 2015
+
+ + config: keyword "include" supports wildcard patterns
+ + http: config: new option "target_regex" inside "path" to support simple regular expressions
+ - http: tunnel: shutdown() called by net.listen was failing with an error because the socket had been shut down by "http" module itself
+ - http: tunnel: request data wasn't passed to a request handler anymore after it had finished producing response data
+ - http: tunnel: error response wasn't sent to a client, e.g. if connection with an upstream server has failed
+ + http-proxy: new option "deny_urls" to reject requests to the specified hosts. Wildcards are supported.
+ * http.static-file, http.dir-index: support large filenames
+ + http.static-file, cache.file: new option "read_ahead" to optimize reading from file
+
+
+fserv v0.21 - Feb 2, 2015
+
+ - http.static-file: cache was not updated if a file was renamed
+ - http.static-file: don't hang while trying to open a pipe
+ - http: config: default_mime_type didn't work if empty
+ - http: fix error when a client couldn't receive response in case another I/O channel signals in parallel
+ * http, http-proxy: use another debug log level ("http-filters") for messages about processing a chain of filters
+ * http, http-proxy: access log: showing the number of received bytes in HTTP tunnel mode
+ * http-proxy: access log: showing the time between acquire and release of connection with an upstream server
+ - http-proxy: don't use port number in Host header field of request to upstream server if the port matches the scheme
+ - http-proxy: print to log upstream server address on error after connection is established
+ - http-proxy: config: read_header_growby, max_header_size, write_timeout, read_timeout can't be 0
+ - http-proxy: HTTP headers with an underscore are passed transparently.  However, dynamic $http_* variables for those headers are NOT supported.
+ - net.resolve: re-initialize UDP socket after send() fails
+
+
+fserv v0.20 - Dec 24, 2014
+
+ * http-proxy: faster processing of additional headers ("request_headers" and "response_headers") specified in configuration
+ + http-proxy: conf: added argument "bad_response" into option "try_next_server"
+ + http-proxy: conf: added option "pass_query_string"
+ - http-proxy: duplicate Transfer-Encoding might appear in response if transfer encoding isn't "chunked".
+ - http-proxy: keep-alive connection didn't work after a response with code 304
+ + http: separate access log
+ + http: active connections are closed on server stop
+ - http: fixed segfault in some cases when there's an error in configuration
+ - http: fixed memory leak on error at a connection initialization
+ + net.connect: all keep-alive connections are closed on server stop
+ - net.connect: fixed segfault on server stop
+ - net.connect: upstream server was mistakenly marked as "down" after the connection to its first address had failed
+ - net.listen: printing core server variables didn't work if SSL was enabled
+ * log: context log-level is now inherited
+ - log: unix: if a server was started as a daemon, there was invalid PID in logs
+ - core: stop signal wasn't sent to already started modules on error during server startup
+
+
+fserv v0.19 - Dec 7, 2014
+
+ - http: keep-alive connection didn't work for 304 response
+ - http: fixed segfault in some cases when there's an error in configuration
+ - http.static-file: stale cached file descriptors weren't handled properly
+ - net.connect: windows: stale keep-alive connections weren't handled properly
+ - net.listen: fixed segfault when log context wasn't reset
+
+
+fserv v0.18 - Nov 24, 2014
+
+ * refactored http modules
+ + log: support logging while reading configuration on server start
+ + listen: config: max_clients option for each listener
+ - static-file cache didn't work
+ - connect: fix crash when using keep-alive connections cache
+ - connect: fix crash when using debug logging
+ - resolve: IPv4/v6 resources stored in cache didn't work in some cases
+ - log: correctly add new-line after a large message
+ - log: error messages were printed to stdout instead of stderr
+
+
+fserv v0.17 - Aug 27, 2014
+
+ * refactored modules: cache.mem, net.connect, net.resolve, net.listen
+ * changed configuration options of those modules.
+ - core: startup: fixed error reporting after server startup has failed
+ - core: config: check module filename for invalid characters (NULL and '/')
+ - fixed several small bugs
+
+
+fserv v0.16 - Jun 8, 2014
+
+SSL client.
+
+ + SSL: server SNI is supported
+ + SSL client with SNI support
+ + SSL: peer verify (client and server)
+ - Http: fixed I/O error handling
+ * external modules: proxy, http, log, cache
+ + Log: several output files can be configured within the same context
+ - Log: "-s reopen" command did not work for gzip logs
+
+
+fserv v0.15 - Apr 22, 2014
+
+SSL server, gzip logging.
+
+ + new module: SSL server using OpenSSL library.
+ * faster matching of virtual hosts, HTTP headers, dynamic variables, MIME types
+ - HttpProxy: could not use system sendfile() in some cases
+ * Http: disable Host "*", use default host instead
+ + Http: ability to assign a host to the specified listener
+ * Resolve: higher resolution of query resend timer
+ * HttpZ: added config option to set gzip buffer size
+ + Log: compress data on-the-fly with gzip
+ * Log: moved logging via HTTP into a separate module
+ - Log: bufferred logs did not work
+
+
+fserv v0.14 - Mar 12, 2014
+
+Improved DNS Resolver; regression bugfixes and several minor improvements.
+
+ * Resolve: DNS resolver is a separate module now
+ + Resolve: support for several DNS servers and round robin load balancing
+ + Resolve: lookup IPv6 addresses
+ - Resolve: don't resend DNS query until retry timeout is expired
+ * Cache: less memory usage for multiple items with the same key
+ - Cache: fixed invalid extension of stored files
+ - Http: 30x responses did not work;  gzip response did not work in some cases
+ + Http: added socket option to set receive/send system buffer size;
+   socket options were moved into Http module configuration
+ * HttpProxy: ability to configure system socket options
+ * HttpProxy: no excessive request URI escaping
+ + HttpProxy: 304 response is supported on a cached document
+ - HttpProxy: fixed segfault after pending read is canceled
+ + HttpStaticFile, HttpDirIndex: ability to configure "Cache-Control: max-age" header value in response
+ * HttpZ: using shared library mod/libz.so.1
+
+
+fserv v0.13 - Feb 1, 2014
+
+ + HttpDataPool: new data filter to store body in a file before processing request or sending response.
+ + Connect: immediately handle signal from cached connection (e.g. when connection has been reset by peer).  Only for UNIX.
+ - Listen: active connections were not closed properly on server stop.
+ - HttpProxy: "Cache-Control: max-age" was not taken into account
+
+
+fserv v0.12 - Dec 30, 2013
+
+ - Broadcast: fixed mpeg header finding algorithm
+ - Broadcast: proxy: logging context is restored after the first stream stop
+ - HttpStaticFile: Location header did not contain the original query string
+ - HttpStaticFile: possible memory leak when Location header is being constructed
+ * Http: sub-modules now use logging context of Host or File
+ - Connect: cached connections did not work
+ - Connect: load-balancing could work inproperly in several cases
+ + HttpProxy: new option "TryNextServer": request the next server until a successful response is received
+ - HttpProxy: Vary header with an empty value could be proxied
+ + Listen: deferred accept is supported on FreeBSD
+
+
+fserv v0.11 - Dec 17, 2013
+
+Asynchronous DNS resolve.  Improved Broadcast module.
+
+ + Http: added MaxKeepAliveRequests option
+ + Connect: asynchronous DNS resolve of IPv4 addresses with a local cache
+ - Cache: items could be skipped during processing of the lists
+ + Broadcast: automatically start/stop a stream at the specified time
+ - Broadcast: the module was sending invalid data when meta information had not been set
+ * Broadcast: proxy: robust algorithm to determine the first mpeg header
+ + Broadcast: proxy: configuration: ability to specify buffer size in milliseconds.
+   Major improvement of response speed when a client connects for the first time.
+ + Broadcast: proxy: write ID3v2 tags into stored MP3 files
+ * Broadcast: local: implemented basic logic to skip invalid data at the beginning of mp3 file
+
+
+fserv v0.10 - Nov 9, 2013
+
+A bunch of bugfixes.
+
+ * finished the transition of C++ code to pure C.
+ - fixed some minor bugs in HTTP parser.
+ - Http: requests with body might be handled incorrectly in some cases
+ - setting "MaxFdNumber" did not work.
+ * Listen: better handling of queued connections after MaxFdNumber has been reached
+ - Listen: fixed invalid behaviour after MaxFdNumber has been reached
+ - Listen: the module stopped accepting new connections after MaxConnections number has been reached
+ * Cache: if "MaxItems" is reached, delete an old item and store the new one
+ * Broadcast module is now external: "mod/broadcast.so"
+ - Broadcast: fixed a bug when some clients did not receive new data chunks in time
+ - Log: turning off all logs did not work
+ - Log: rotation did not work for unbuffered files
+
+
+fserv v0.9 - Oct 23, 2013
+
+Full duplex I/O and several other new features.
+
+ ** Http, HttpProxy: I/O event processor is full-duplex now.
+    Both read/write channel events are processed immediately.
+ *  Http, HttpProxy: new request/response receiving mechanism with input filtering.
+ +  Http: sub-modules can flush output data immediately.  This is useful when data is filtered by HttpZ.
+ +  Http: sub-modules can send "as-is" output data to client.  Filters are not notified in this case.
+ +  Http: chunked request body is supported.  However HttpProxy can not yet handle that.
+ +  Http: access log message is added also in case of bad request.
+ +  Http: now there's an ability to configure logs for each Path within the Host.
+ ++ HttpProxy: CONNECT method is supported, HTTPS can be proxied now.
+ +  HttpProxy: specific URLs may be rejected with "403 forbidden".
+    This feature can be used to block advertisement content.
+ ++ Broadcast: handling time synchronization errors when proxying audio stream.
+ +  Broadcast: the original response error code from upstream server is passed to client.
+ ++ Log: messages can be transferred via HTTP in real time.
+ +  Status: data format is JSON now.
+ ++ Status: data is sent to a client using only one keep-alive connection.
+ -  Listen, Connect: expired connections could not be closed in time.
+ -  Http: don't overload response status line in access log when headers have been already sent.
+
+
+fserv v0.8 - Aug 7, 2013
+
+Fixed memory leaks when using cache.
+
+ * HttpProxy: the module was rewritten in C.
+   + cached data revalidation
+ * Cache: the module was redesigned and rewritten in C.
+   * in-memory or file cache
+   + HttpStaticFile and HttpDirIndex use different cache contexts now
+   + command to delete the entire cache
+   + file store pre-allocation
+   - fixed: stale items were not deleted in time
+   - fixed resource leaks
+ + Log: escape invalid characters
+
+
+fserv v0.7 - July 22, 2013
+
+Added new module - Broadcast, which streams audio data.
+
+ ++ Broadcast module. The current features include:
+   . streaming local audio files from the M3U list
+   . re-transmit remote SHOUTcast traffic (proxy)
+   . storing the received data in files on disk with preallocation and data buffering
+   . on-demand streaming: suspend the stream when there are no listeners
+   . accurate timing of meta data
+ + Log: simple files rotation
+ + Log: "reopen" command to reopen log files
+ + Log: speeded up flushing data to files
+ + Log: added user-agent info to access log
+ + HttpProxy: new option OutputLowWat in configuration
+ + HttpDirIndex: alphabetical sorting of files
+ + HttpDirIndex: file listing via javascript.  Sorting on client side either by name, date or size.
+ - HttpDirIndex: "Cache-Control" header was not handled, therefore stale cached data could be sent to the client.
+ - HttpZ: gzip did not work for large files
+
+
+fserv v0.6 - May 28, 2013
+
+gzip compression is supported.  Improved proxied data caching.
+
+ ++ connect: keep more than 1 persistent connection to one upstream server
+ ++ cache: proxied response data can be stored in files on disk
+ ++ z: new http filter which handles gzip data compression
+ + cache: several new configuration options to control memory and file caching
+ + proxy: dont output response to the HTTP client before full response from the upstream server is received
+ + proxy: improved cache expire logic
+ + proxy: "304 not modified" with cached response
+ + proxy: HEAD method is handled
+ + log: time in local timezone
+ * stat: dont waste CPU time while there are no clients connected
+ * proxy: release the connection to upstream server a little bit earlier
+ - http: "206 partial" response did not work properly
+ - http: "keep-alive" timer was treated as "read" timer
+ and many small changes
+
+
+fserv v0.5 - Apr 21, 2013
+
+A lot of stuff was redesigned.  Now there are almost unlimited abilities for the modules to interact with each other. External modules are also supported.
+
+ + New modules are added.
+   Http module was split into several sub-modules; filters are also supported.
+   New inter-module communication interface - FEnv.
+ + first public version for Linux (3.2) and FreeBSD (9.0).  This version is a single-thread only.
+ + added Host.File.  path/file routing in config.
+ + more log messages, debug logging
+ + enhanced statistics module with HTML+AJAX interface
+ + customizable HTML template for a directory index
+ + added proxy response caching
+ + added cache timeout expiry
+ + can act as a forward proxy
+ * more precise timer
+ * one-pass data parsing
+ * more flexible dynamic variables.  They can be used inside HTML templates and
+   backend server URLs.
+ - some functionality is temporarily disabled in this version (fastcgi module,
+   system file change notification)
+
+
+fserv v0.4.2 - Jul 30, 2012
+
+http:
+ + added "Accept-Ranges: none"
+ + added "411 length required"
+ + added "multipart/byteranges" response for multi-range request
+ + "405 method not allowed" for POST method request on a static file
+ * close connection after response with an error for incorrect requests
+ - don't send "chunked" response to HTTP/1.0 client if it does not support it
+ - don't close connection by default for clients other than HTTP/1.0.
+   Require Host header for them.
+ - removed "Content-Length: 0" from 304 response
+ - HEAD method request for error response is handled properly
+fcgi:
+ - invalid response when fcgi server closed connection
+ - $remote_addr/$remote_port passed incorrectly
+proxy:
+ + added Backend.AddRequestHeaders setting with support of dynamic variables.
+   2 new variables are added: $proxy_host and $host. Backend.Host setting is removed.
+ + forbidden headers for both request and response.
+- core: segmentation fault when timed out event signals while the server is stopping
+
+
+fserv v0.4.1 - Jul 25, 2012
+
+Bugs fixed:
+ - proxy: invalid chunked response processing
+ - http: invalid %-encoded URIs are handled properly now
+
+
+fserv v0.4 - Jul 15, 2012
+
+Features:
+ + http, proxy, fcgi: connect/read timeout
+ + log: passing output to stdout, stderr
+ + http: added socket options to config
+ + proxy,fcgi: separate logging
+ * conf: changed Host/Server representation
+
+Bugs fixed:
+ - conf: parsing
+ - http: connection close/keep-alive for HTTP/1.0
+ - http: URI redirection
+ - http: "304 Not Modified" with body
+ - http: HEAD method response with body
+ - http: out of host dir traversal
+ - http: cached dir with "301 Moved Permanently"
+ - fcgi: config parsing
+ - proxy: chunked response
+
+
+fserv v0.3 - May 14, 2012
+
+Some bugs fixed (-), some features added (+):
+
+ + config: added "default" keyword
+ * config: open-brace "{" on the next line
+ + config: stream comments /* ... */ handling
+ + http: added "ConnectionCloseFor" setting
+ + proxy: added "Hostname" setting
+ + proxy: hostname inside "Connect" setting is supported
+ + proxy: keep-alive connections pool
+ - proxy: reconnect on error
+ - http: URI parsing bugs
+ - fcgi: parameters passing bug
+ - fcgi: chunked response bug
+ - stat: segmentation fault bug
+
+
+fserv v0.2 - May 10, 2012
+
+The support of FastCGI and Proxy is added, but there's no response caching yet. New features:
+
+ + Request pipelining
+ + FastCGI module
+ + Proxy module
+ + Separate log files per Host
+ + New configuration file format (C++ style, much more convenient than XML
+   which was used in the previous version), a lot of new options
+
+
+fserv v0.1 - Feb 14, 2012
+
+First public beta is available for download

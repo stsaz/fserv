@@ -12,7 +12,7 @@ Copyright 2014 Simon Zolin.
 #include <FF/sendfile.h>
 
 
-#define FSV_VER "0.23"
+#define FSV_VER "0.24"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;

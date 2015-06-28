@@ -69,7 +69,7 @@ preinstall: all
 		$(RUNDIR)/www
 	$(CP) $(FSV_SRCDIR)/../conf/* $(RUNDIR)/conf/
 	$(CP) *.$(SO) $(RUNDIR)/mod/
-	$(CP) $(FSV_SRCDIR)/../README.txt $(RUNDIR)/
+	$(CP) $(FSV_SRCDIR)/../README.txt $(FSV_SRCDIR)/../CHANGES.txt $(RUNDIR)/
 
 # http
 	$(CP) $(FSV_SRCDIR)/../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
