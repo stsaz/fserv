@@ -584,6 +584,8 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	}
 
 	if (stflm->cache != NULL) {
+		ca.key = fn.ptr;
+		ca.keylen = fn.len;
 		ca.data = (void*)&o;
 		ca.datalen = sizeof(stfl_obj*);
 		ca.id = NULL;
