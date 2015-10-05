@@ -254,8 +254,8 @@ static void test_lsn_fin(tester *t)
 int test_listen(tester *t)
 {
 	fsv_conn_new nc = {0};
-	ffsyschar fne[FF_MAXPATH];
-	const ffsyschar *fn;
+	char fne[FF_MAXPATH];
+	const char *fn;
 	fffd f;
 	size_t i;
 
@@ -275,10 +275,9 @@ int test_listen(tester *t)
 #else
 	#define TMPDIR "%TMP%"
 #endif
-	fn = TEXT(TMPDIR) TEXT("/tmp-ff");
-	if (0 != ffenv_expand(fn, fne, FFCNT(fne)))
-		fn = fne;
-	f = fffile_createtempq(fn, O_RDWR);
+	fn = TMPDIR "/tmp-ff";
+	fn = ffenv_expand(fne, sizeof(fne), fn);
+	f = fffile_createtemp(fn, O_RDWR);
 	x(f != FF_BADFD);
 	x(0 == fffile_trunc(f, BUFSIZE));
 	t->fd = f;

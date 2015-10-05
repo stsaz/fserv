@@ -77,7 +77,7 @@ static size_t test_http_recvhdrs(ffskt sk, ffhttp_response *resp)
 	}
 
 	fsv_dbglog(ht->t->logctx, FSV_LOG_DBGNET, "HTST", NULL, "received response: [%u] %*s"
-		, resp->h.len, resp->h.len, buf);
+		, resp->h.len, (size_t)resp->h.len, buf);
 
 	return r;
 }
@@ -108,7 +108,7 @@ static int test_http_recvbody(ffskt sk, ffhttp_response *resp, size_t rresp)
 			ffstr_set(&sbody, body, r);
 		}
 
-		fsv_dbglog(ht->t->logctx, FSV_LOG_DBGNET, "HTST", NULL, "received body: [%u] %S"
+		fsv_dbglog(ht->t->logctx, FSV_LOG_DBGNET, "HTST", NULL, "received body: [%L] %S"
 			, sbody.len, &sbody);
 
 		if (resp->h.cont_len != -1) {
@@ -174,7 +174,7 @@ static int FFTHDCALL test_http_run(void *udata)
 		x(rq->req.len == r);
 		ireq++;
 
-		fsv_dbglog(ht->t->logctx, FSV_LOG_DBGNET, "HTST", NULL, "#%u: sent data: [%u] %*s"
+		fsv_dbglog(ht->t->logctx, FSV_LOG_DBGNET, "HTST", NULL, "#%u: sent data: [%L] %*s"
 			, ireq, r, r, rq->req.ptr);
 
 		if (rq->fin)

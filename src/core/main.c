@@ -25,7 +25,6 @@ static int conf_ver(ffparser_schem *ps, void *obj);
 static int conf_help(ffparser_schem *ps, void *obj);
 static const ffpars_enumlist conf_sigenum;
 
-static const char * ps_modulename(char *fnu, size_t cap, const char *argv0);
 static char * get_defconf(const char *argv0);
 static int args_parse(cmdline *opts, const char **argv, int argc);
 static fffd bgrun(const cmdline *opts);
@@ -108,24 +107,6 @@ static const ffpars_enumlist conf_sigenum = {
 	conf_ssigs, FFCNT(conf_ssigs), FFPARS_DSTOFF(cmdline, sig)
 };
 
-#ifdef FF_UNIX
-static const char * ps_modulename(char *fnu, size_t cap, const char *argv0) {
-	return argv0;
-}
-
-#else
-static const char * ps_modulename(char *fnu, size_t cap, const char *argv0) {
-	ffsyschar fnw[FF_MAXPATH];
-	char *s;
-	size_t n = GetModuleFileName(NULL, fnw, FF_TOINT(FFCNT(fnw)));
-	s = ffs_copyq(fnu, fnu + cap, fnw, n);
-	s = ffs_copyc(s, fnu + cap, '\0');
-	if (s == fnu + cap)
-		return NULL;
-	return fnu;
-}
-#endif
-
 static char * get_defconf(const char *argv0)
 {
 	const char *fn;
@@ -134,7 +115,7 @@ static char * get_defconf(const char *argv0)
 	size_t r;
 	char fnu[FF_MAXPATH];
 
-	fn = ps_modulename(fnu, FFCNT(fnu), argv0);
+	fn = ffps_filename(fnu, FFCNT(fnu), argv0);
 	if (fn == NULL) {
 		flog_err("error", "too large filename");
 		return NULL;

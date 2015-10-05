@@ -72,6 +72,7 @@ typedef struct fserver {
 	ushort events_count;
 	ushort timer_resol; //in ms
 	uint page_size;
+	uint include_depth;
 } fserver;
 
 
@@ -140,7 +141,6 @@ static int srv_confinclude(ffparser_schem *ps, const char *fn);
 static int srv_conf(const char *filename, ffparser_schem *ps);
 static int srv_start(void);
 static int srv_stop(int sig, fmodule *last);
-static int srv_settmr(void);
 static int srv_evloop(void);
 static void srv_destroymods(void);
 static int srv_startmods(void);
@@ -592,32 +592,28 @@ static int srv_process_vars(ffstr3 *dst, const ffstr *src, fsv_getvar_t getvar, 
 	ffstr sname, sval;
 	const char *p = src->ptr
 		, *end = src->ptr + src->len;
+	ffsvar v;
+	int r;
 
 	dst->len = 0;
 
 	while (p != end) {
+		size_t n = end - p;
+		r = ffsvar_parse(&v, p, &n);
+		p += n;
 
-		if (*p != '$') {
-			sval.ptr = (char*)p;
-			p = ffs_find(p, end - p, '$');
-			sval.len = p - sval.ptr;
-
+		switch (r) {
+		case FFSVAR_TEXT:
+			sval = v.val;
 			if (sval.len == src->len) {
 				ffarr_free(dst);
 				ffstr_set2(dst, src);
 				return 0;
 			}
+			break;
 
-		} else {
-
-			p++; //skip $
-			sname.ptr = (char*)p;
-			for (; p != end; p++) {
-				if (!ffchar_isname(*p))
-					break;
-			}
-			sname.len = p - sname.ptr;
-
+		case FFSVAR_S:
+			sname = v.val;
 			sval.len = getvar(udata, sname.ptr, sname.len, &sval.ptr, 0);
 			if (sval.len == -1) {
 				dbglog2(logctx, FSV_LOG_DBGFLOW, "srv_process_vars(): unknown variable: $%S", &sname);
@@ -844,6 +840,8 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 	ffbool include = 0;
 	ffstr mp;
 
+	serv->include_depth++;
+
 	fd = fffile_open(filename, O_RDONLY);
 	if (fd == FF_BADFD) {
 		srv_errsave(fferr_last(), "%e: %s", FFERR_FOPEN, filename);
@@ -866,8 +864,6 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 			ffstr_shift(&mp, nn);
 
 			if (r == FFPARS_MORE) {
-				if (0 != ffpars_savedata(ps->p))
-					goto err;
 				break;
 			}
 
@@ -905,7 +901,7 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 	if (include)
 		r = FFPARS_ENOVAL;
 
-	if (!ffpars_iserr(r))
+	if (serv->include_depth == 1 && !ffpars_iserr(r))
 		r = ffconf_schemfin(ps);
 
 err:
@@ -920,16 +916,12 @@ err:
 		goto fail;
 	}
 
-	if (ps->p->ctxs.len != 1) {
-		srv_errsave(-1, "parse config: %s: incomplete document", filename);
-		goto fail;
-	}
-
 	r = 0;
 
 fail:
 	fffile_mapclose(&fm);
 	fffile_close(fd);
+	serv->include_depth--;
 	return r;
 }
 
@@ -955,19 +947,9 @@ static int srv_startmods(void)
 	return 0;
 }
 
-static int srv_settmr(void)
-{
-	if (0 != fftmrq_start(&serv->tmrqu, serv->kq, serv->timer_resol)) {
-		srv_errsave(fferr_last(), "%e", FFERR_TMRINIT);
-		return 1;
-	}
-	return 0;
-}
-
 static int srv_start(void)
 {
 	int wh;
-	uint ms;
 
 	serv->kq = ffkqu_create();
 	if (serv->kq == FF_BADFD) {
@@ -990,15 +972,16 @@ static int srv_start(void)
 	srv_timer(&serv->tmr, 1, &curtime_update, &serv->time);
 	fftime_now(&serv->time.time);
 
-#ifdef FF_WIN
-	ms = serv->timer_resol / 4;
-#else
-	ms = (uint)-1; //infinite
-#endif
-	serv->pquTm = ffkqu_settm(&serv->quTm, ms);
+	serv->pquTm = ffkqu_settm(&serv->quTm, (uint)-1);
 
 	serv->state = FSVMAIN_RUN;
 	if (0 != srv_startmods()) {
+		wh = 1;
+		goto done;
+	}
+
+	if (0 != fftmrq_start(&serv->tmrqu, serv->kq, serv->timer_resol)) {
+		srv_errsave(fferr_last(), "%e", FFERR_TMRINIT);
 		wh = 1;
 		goto done;
 	}
@@ -1030,9 +1013,6 @@ static int srv_evloop(void)
 {
 	struct { FFARR(ffkqu_entry) } events;
 
-	if (0 != srv_settmr())
-		return 0;
-
 	dbglog(FSV_LOG_DBGFLOW, "entering event loop");
 
 	if (NULL == ffarr_alloc(&events, serv->events_count)) {
@@ -1063,8 +1043,6 @@ static int srv_evloop(void)
 				serv->state = FSVMAIN_STOP;
 				break;
 			}
-
-			ffkqu_runtimer();
 		}
 
 		switch (serv->state) {
