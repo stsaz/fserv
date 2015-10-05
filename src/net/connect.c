@@ -947,7 +947,7 @@ static void conn_onexpire(const fftime *now, void *param)
 {
 	fsv_conn *c = param;
 	dbglog(c->logctx, FSV_LOG_DBGNET, "timer expired");
-	ffaio_cancelasync(&c->aiotask, FFAIO_CONNECT, NULL);
+	ffaio_cancelasync(&c->aiotask, FFAIO_RW, NULL);
 }
 
 static ssize_t conn_recv(fsv_conn *c, void *buf, size_t size, ffaio_handler handler, void *udata)

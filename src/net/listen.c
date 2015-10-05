@@ -465,7 +465,7 @@ static void lsn_onexpire(const fftime *now, void *param)
 {
 	fsv_lsncon *c = param;
 	lx_dbglog(c->lx, FSV_LOG_DBGNET, "%S: timer expired", &c->saddr_peer);
-	ffaio_cancelasync(&c->aiotask, FFAIO_READ, NULL);
+	ffaio_cancelasync(&c->aiotask, FFAIO_RW, NULL);
 }
 
 static void lsn_oncancel(void *udata)
