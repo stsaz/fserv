@@ -131,10 +131,14 @@ static void oninit(void)
 FFDL_ONINIT(oninit, NULL)
 
 
+FF_EXTN const fsv_mod fsv_cach_file;
+
 FF_EXTN FF_EXP const fsv_mod * fsv_getmod(const char *name)
 {
 	if (!ffsz_cmp(name, "mem"))
 		return &fsv_cache_mod;
+	else if (!ffsz_cmp(name, "file"))
+		return &fsv_cach_file;
 	return NULL;
 }
 
