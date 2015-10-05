@@ -46,6 +46,7 @@ typedef struct lisnctx {
 	byte saddr_portlen;
 	unsigned ip6dual :1 //listen on both IPv4 and IPv6
 		, acc_init :1; //if set, 'acc' is initialized
+	const fsv_ssl *modssl;
 
 	//status:
 	uint connected
@@ -62,11 +63,17 @@ struct fsv_lsncon {
 	ffstr saddr_local //local address as a string
 		, saddr_peer; //peer address as a string
 	void *userptr;
+	fsv_sslcon *sslcon;
+	ffstr sslbuf;
+	unsigned ssl_renegotiate :1
+		, ssl_init :1;
 };
 
 enum {
 	FDLIM_TIMER_INTERVAL = 4000
 	, NOMEM_TIMER_INTERVAL = 4000
+	, LISN_SSL_RECV_TM = 65
+	, LISN_SSL_SEND_TM = 65
 };
 
 #define LSN_MODNAME "LISN"
@@ -115,6 +122,7 @@ static const fsv_status_handler lisn_stat_iface = {
 static int lsnm_conf_log(ffparser_schem *ps, lisnmod *lm, ffpars_ctx *a);
 static int lsnx_conf_log(ffparser_schem *ps, lisnctx *lx, ffpars_ctx *a);
 static int lsnx_conf_listen(ffparser_schem *ps, lisnctx *lx, const ffstr *s);
+static int lsnx_conf_ssl(ffparser_schem *ps, lisnctx *lx, const ffstr *s);
 
 static int lsnm_start(void);
 static int lsnm_stop(void);
@@ -134,6 +142,14 @@ static void lsn_onexpire(const fftime *now, void *param);
 static void lsn_callmod(fsv_lsncon *c);
 static void lsn_resettimer(fsv_lsncon *c, uint t);
 
+static void lsn_ssl_newcon(fsv_lsncon *c, void *sslctx);
+static void lsn_ssl_finaccept(fsv_lsncon *c);
+static int lsn_ssl_srvname(void *udata);
+static void lsn_ssl_handshake(void *udata);
+static ssize_t lsn_ssl_recv(fsv_lsncon *c, void *buf, size_t size, ffaio_handler handler, void *udata);
+static ssize_t lsn_ssl_sendfile(fsv_lsncon *c, ffsf *sf, ffaio_handler handler, void *udata);
+static void lsn_ssl_shut(void *udata);
+
 
 static const ffpars_arg lsnm_conf_args[] = {
 	{ "log",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&lsnm_conf_log) }
@@ -147,6 +163,7 @@ static const ffpars_arg lsnx_conf_args[] = {
 	, { "backlog",  FFPARS_TINT,  FFPARS_DSTOFF(lisnctx, backlog) }
 	, { "linger_timeout",  FFPARS_TINT | FFPARS_F16BIT,  FFPARS_DSTOFF(lisnctx, tmout_linger) }
 	, { "tcp_defer_accept",  FFPARS_TBOOL | FFPARS_F8BIT,  FFPARS_DSTOFF(lisnctx, defer_accept) }
+	, { "ssl",  FFPARS_TSTR,  FFPARS_DST(&lsnx_conf_ssl) }
 };
 
 static int lsnm_conf_log(ffparser_schem *ps, lisnmod *lm, ffpars_ctx *a)
@@ -206,6 +223,20 @@ static int lsnx_conf_listen(ffparser_schem *ps, lisnctx *lx, const ffstr *s)
 		return FFPARS_ESYS;
 	lx->saddr_portlen = (byte)port.len;
 
+	return 0;
+}
+
+static int lsnx_conf_ssl(ffparser_schem *ps, lisnctx *lx, const ffstr *s)
+{
+	const fsv_modinfo *m;
+
+	m = lsnm->core->findmod(s->ptr, s->len);
+	if (m == NULL)
+		return FFPARS_EBADVAL;
+
+	lx->modssl = m->f->iface("ssl");
+	if (lx->modssl == NULL)
+		return FFPARS_EBADVAL;
 	return 0;
 }
 
@@ -488,6 +519,12 @@ static void lsn_closecon(fsv_lsncon *c, int flags)
 
 	if (flags & FSV_LISN_LINGER) {
 
+		if (lx->modssl != NULL) {
+			lsn_resettimer(c, lx->tmout_linger);
+			lsn_ssl_shut(c);
+			return;
+		}
+
 		if (0 == ffskt_fin(c->sk)) {
 			lx_dbglog(lx, FSV_LOG_DBGNET, "%S: linger", &c->saddr_peer);
 			lsn_resettimer(c, lx->tmout_linger);
@@ -503,6 +540,11 @@ static void lsn_closecon(fsv_lsncon *c, int flags)
 		, &c->saddr_peer, (ssize_t)c->sk, lx->connected);
 	fflist_rm(&lsnm->cons, &c->sib);
 	lsnm->core->fsv_timerstop(&c->tmr);
+
+	if (c->sslcon != NULL) {
+		lx->modssl->fin(c->sslcon);
+		c->sslcon = NULL;
+	}
 
 	lsn_recycle(c);
 
@@ -675,12 +717,20 @@ static int lsn_accept1(lisnctx *lx)
 	lx_dbglog(c->lx, FSV_LOG_DBGNET, "accepted connection from %S, socket %L  [%u]"
 		, &c->saddr_peer, (size_t)c->sk, lx->connected);
 
+	if (lx->modssl != NULL) {
+		lsn_ssl_finaccept(c);
+		return 0;
+	}
+
 	lsn_callmod(c);
 	return 0;
 }
 
 static ssize_t lsn_recv(fsv_lsncon *c, void *buf, size_t size, ffaio_handler handler, void *udata)
 {
+	if (c->lx->modssl != NULL)
+		return lsn_ssl_recv(c, buf, size, handler, udata);
+
 	if (handler == NULL) {
 		ssize_t r = ffaio_result(&c->aiotask);
 
@@ -712,6 +762,9 @@ static ssize_t lsn_send(fsv_lsncon *c, const void *buf, size_t len, ffaio_handle
 
 static ssize_t lsn_sendfile(fsv_lsncon *c, ffsf *sf, ffaio_handler handler, void *udata)
 {
+	if (c->lx->modssl != NULL)
+		return lsn_ssl_sendfile(c, sf, handler, udata);
+
 	if (handler == NULL) {
 		ssize_t r = ffaio_result(&c->aiotask);
 
@@ -753,6 +806,20 @@ static int lsn_setopt(fsv_lsncon *c, int opt, void *data)
 
 	case FSV_LISN_OPT_LOG:
 		c->logctx = data;
+
+		if (c->sslcon != NULL)
+			c->lx->modssl->setopt(c->sslcon, FSV_SSL_OPT_LOG, c->logctx);
+		break;
+
+	case FSV_LISN_OPT_SSLCTX:
+		if (c->ssl_init) {
+			c->ssl_init = 0;
+			lsn_ssl_newcon(c, data);
+			break;
+		}
+
+		if (0 != c->lx->modssl->setopt(c->sslcon, FSV_SSL_OPT_SSLCTX, data))
+			lsn_closecon(c, 0);
 		break;
 
 	default:
@@ -788,6 +855,12 @@ static ssize_t lsn_getvar(fsv_lsncon *c, const char *name, size_t namelen, void 
 	size_t n = 0;
 	ssize_t v = ffstr_findarr(lsn_vars, FFCNT(lsn_vars), name, namelen);
 	if (v == -1) {
+		if (c->lx->modssl != NULL) {
+			n = c->lx->modssl->getvar(c->sslcon, name, namelen, dst, cap);
+			if (n != -1)
+				return n;
+		}
+
 		return lsnm->core->getvar(name, namelen, dst, cap);
 	}
 
@@ -830,4 +903,326 @@ static ssize_t lsn_getvar(fsv_lsncon *c, const char *name, size_t namelen, void 
 
 	*(char**)dst = p;
 	return n;
+}
+
+
+static void lsn_ssl_newcon(fsv_lsncon *c, void *sslctx)
+{
+	fsv_ssl_newcon opts = {0};
+	opts.srvname_cb = &lsn_ssl_srvname;
+	opts.srvname_param = c;
+	opts.logctx = c->logctx;
+	c->sslcon = c->lx->modssl->newcon(sslctx, &opts, FSV_SSL_ACCEPT);
+	if (c->sslcon == NULL) {
+		lsn_closecon(c, 0);
+		return;
+	}
+
+	lsn_ssl_handshake(c);
+}
+
+static void lsn_ssl_finaccept(fsv_lsncon *c)
+{
+	c->ssl_init = 1;
+	if (0 != c->lx->cb->onsig(c, NULL, FSV_LISN_SSL_INIT)) {
+		lsn_closecon(c, 0);
+		return;
+	}
+}
+
+static int lsn_ssl_srvname(void *udata)
+{
+	fsv_lsncon *c = udata;
+	return c->lx->cb->onsig(c, NULL, FSV_LISN_SSL_SNI);
+}
+
+static void lsn_ssl_handshake(void *udata)
+{
+	fsv_lsncon *c = udata;
+	int r;
+	ssize_t t;
+	void *sslbuf_ptr;
+	ssize_t sslbuf_len = -1;
+
+	t = ffaio_result(&c->aiotask);
+
+#ifdef FF_WIN
+	if (t > 0) {
+		//data is sent via ffaio_send()
+		sslbuf_len = t;
+		t = 0;
+	}
+#endif
+
+	if (t != 0) {
+		goto fail;
+	}
+
+	lsnm->core->fsv_timerstop(&c->tmr);
+
+	for (;;) {
+		r = c->lx->modssl->handshake(c->sslcon, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				if (fferr_again(fferr_last())
+					&& FFAIO_ASYNC == ffaio_recv(&c->aiotask, &lsn_ssl_handshake, NULL, 0)) {
+					c->aiotask.udata = c;
+					lsn_resettimer(c, LISN_SSL_RECV_TM);
+					return;
+				}
+				goto fail;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				if (fferr_again(fferr_last())
+					&& FFAIO_ASYNC == ffaio_send(&c->aiotask, &lsn_ssl_handshake, sslbuf_ptr, sslbuf_len)) {
+					c->aiotask.udata = c;
+					lsn_resettimer(c, LISN_SSL_SEND_TM);
+					return;
+				}
+				goto fail;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			goto fail;
+		}
+
+		break;
+	}
+
+	//handshake done
+	lsn_callmod(c);
+	return;
+
+fail:
+	lx_syserrlog(c->lx, FSV_LOG_ERR, "%s", "SSL handshake");
+	lsn_closecon(c, 0);
+}
+
+static ssize_t lsn_ssl_recv(fsv_lsncon *c, void *buf, size_t size, ffaio_handler handler, void *udata)
+{
+	void *sslbuf_ptr;
+	ssize_t r, sslbuf_len = -1;
+
+	if (handler != NULL) {
+		if (c->ssl_renegotiate) {
+			if (FFAIO_ASYNC == ffaio_send(&c->aiotask, handler, c->sslbuf.ptr, c->sslbuf.len)) {
+				c->aiotask.udata = udata;
+				return FSV_IO_ASYNC;
+			}
+			return FSV_IO_ERR;
+		}
+
+		if (FFAIO_ASYNC == ffaio_recv(&c->aiotask, handler, NULL, 0)) {
+			c->aiotask.udata = udata;
+			return FSV_IO_ASYNC;
+		}
+		return FSV_IO_ERR;
+	}
+
+	r = ffaio_result(&c->aiotask);
+
+#ifdef FF_WIN
+	if (c->ssl_renegotiate && r > 0) {
+		//data is sent via ffaio_send()
+		sslbuf_len = r;
+		r = 0;
+	}
+#endif
+
+	if (r != 0)
+		return r;
+
+	c->ssl_renegotiate = 0;
+	for (;;) {
+		r = c->lx->modssl->recv(c->sslcon, buf, size, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last()))
+					r = FSV_IO_EAGAIN;
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			c->ssl_renegotiate = 1;
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last())) {
+					ffstr_set(&c->sslbuf, sslbuf_ptr, sslbuf_len);
+					r = FSV_IO_EAGAIN;
+				}
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			r = FSV_IO_ERR;
+			break;
+		}
+
+		break;
+	}
+	return r;
+}
+
+static ssize_t lsn_ssl_sendfile(fsv_lsncon *c, ffsf *sf, ffaio_handler handler, void *udata)
+{
+	void *sslbuf_ptr;
+	ssize_t r, sslbuf_len = -1;
+
+	if (handler != NULL) {
+		if (c->ssl_renegotiate) {
+			if (FFAIO_ASYNC == ffaio_recv(&c->aiotask, handler, NULL, 0)) {
+				c->aiotask.udata = udata;
+				return FFAIO_ASYNC;
+			}
+			return FSV_IO_ERR;
+		}
+
+		if (FFAIO_ASYNC == ffaio_send(&c->aiotask, handler, c->sslbuf.ptr, c->sslbuf.len)) {
+			c->aiotask.udata = udata;
+			return FSV_IO_ASYNC;
+		}
+		return FSV_IO_ERR;
+	}
+
+	r = ffaio_result(&c->aiotask);
+
+#ifdef FF_WIN
+	if (r > 0) {
+		//data is sent via ffaio_send()
+		sslbuf_len = r;
+		r = 0;
+	}
+#endif
+
+	if (r != 0)
+		return r;
+
+	c->ssl_renegotiate = 0;
+	for (;;) {
+		r = c->lx->modssl->sendfile(c->sslcon, sf, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			c->ssl_renegotiate = 1;
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last()))
+					r = FSV_IO_EAGAIN;
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last())) {
+					ffstr_set(&c->sslbuf, sslbuf_ptr, sslbuf_len);
+					r = FSV_IO_EAGAIN;
+				}
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			r = FSV_IO_ERR;
+			break;
+		}
+
+		break;
+	}
+	return r;
+}
+
+static void lsn_ssl_shut(void *udata)
+{
+	fsv_lsncon *c = udata;
+	int er = 0;
+	void *sslbuf_ptr;
+	ssize_t r, sslbuf_len = -1;
+
+	for (;;) {
+		r = c->lx->modssl->shut(c->sslcon, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				er = FFERR_READ;
+
+				if (fferr_again(fferr_last())
+					&& FFAIO_ASYNC == ffaio_recv(&c->aiotask, &lsn_ssl_shut, NULL, 0)) {
+					c->aiotask.udata = c;
+					return;
+				}
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				er = FFERR_WRITE;
+
+				if (fferr_again(fferr_last())
+					&& FFAIO_ASYNC == ffaio_send(&c->aiotask, &lsn_ssl_shut, sslbuf_ptr, sslbuf_len)) {
+					c->aiotask.udata = c;
+					return;
+				}
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			//error is reported by mod-ssl
+			break;
+		}
+
+		break;
+	}
+
+	if (er != 0)
+		lx_syserrlog(c->lx, FSV_LOG_ERR, "shutdown SSL connection with %S: %e", &c->saddr_peer, er);
+
+	lsn_closecon(c, 0);
 }

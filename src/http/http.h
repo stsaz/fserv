@@ -83,6 +83,8 @@ struct httphost {
 
 	struct { FFARR(fsv_lsnctx*) } listeners; //the list of servers on which this host is available
 
+	void *sslctx;
+
 	ffstr3 names;
 	ffstr name;
 

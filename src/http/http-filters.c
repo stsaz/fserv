@@ -27,6 +27,7 @@ static void http_reqparse(fsv_httphandler *h);
 static void http_reqparse_ondone(fsv_httphandler *h);
 static void http_printreq(httpcon *c);
 static int http_sethost(httpcon *c, const ffstr *shost);
+static int http_ssl_checkservname(httpcon *c, const ffstr *host);
 static const fsv_http_cb http_reqhdrs_filter = {
 	&http_reqparse, &http_reqparse_ondone
 };
@@ -345,6 +346,12 @@ static int http_sethost(httpcon *c, const ffstr *shost)
 {
 	httphost *host;
 
+	if (c->host->sslctx != NULL
+		&& 0 != http_ssl_checkservname(c, shost)) {
+		ffhttp_setstatus(&c->resp, FFHTTP_400_BAD_REQUEST);
+		return 1;
+	}
+
 	host = http_gethost(c->conn, shost);
 	if (host != NULL) {
 		c->host = host;
@@ -376,6 +383,23 @@ static void http_printreq(httpcon *c)
 		n += (*n == '\r') ? FFSLEN("\r\n") : FFSLEN("\n");
 		ffstr_shift(&hdrs, n - hdrs.ptr);
 	}
+}
+
+/** Ensure that HTTP host from request matches TLS server name. */
+static int http_ssl_checkservname(httpcon *c, const ffstr *host)
+{
+	ffstr srvname;
+
+	srvname.len = httpm->lisn->getvar(c->conn, FFSTR("ssl_servername"), &srvname.ptr, 0);
+	if (srvname.len == -1)
+		return 0;
+
+	if (!ffstr_eq2(host, &srvname)) {
+		errlog(c->logctx, FSV_LOG_ERR, "HTTP host '%S' does not match TLS server name '%S'"
+			, host, &srvname);
+		return 1;
+	}
+	return 0;
 }
 
 

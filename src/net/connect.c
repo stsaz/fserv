@@ -33,6 +33,9 @@ typedef struct conn_serv {
 	uint down_until; //recheck the down server at this time.  UNIX timestamp.
 
 	unsigned dynamic_url :1; //'surl' contains $vars
+
+	const fsv_ssl *modssl;
+	void *sslctx;
 } conn_serv;
 
 struct fsv_conctx {
@@ -60,6 +63,8 @@ struct fsv_conn {
 	ffskt sk;
 	ffaio_task aiotask;
 	fsv_timer tmr;
+	fsv_sslcon *sslcon;
+	ffstr sslbuf;
 
 	void *userptr; //opaque value set by the caller
 	fsv_logctx *logctx;
@@ -84,6 +89,7 @@ struct fsv_conn {
 		, ipv6 :1
 		, second_ai :1 //if set, 'cur_ai' points to an element in the list 'ai[1]'
 		, isactive :1
+		, ssl_renegotiate :1
 		;
 };
 
@@ -91,7 +97,13 @@ enum CONN_ST {
 	ST_NONE
 	, ST_RESOLVING
 	, ST_CONNECTING
+	, ST_HANDSHAKING
 	, ST_KEEPALIVE
+};
+
+enum {
+	CONN_SSL_RECV_TM = 65,
+	CONN_SSL_SEND_TM = 65,
 };
 
 #define CONN_MODNAME "CONN"
@@ -139,6 +151,7 @@ static const fsv_status_handler conn_stat_iface = {
 // CONF
 static int conm_conf_log(ffparser_schem *ps, conmodule *m, ffpars_ctx *a);
 static int conm_conf_resolver(ffparser_schem *ps, conmodule *m, ffpars_ctx *a);
+static int conn_serv_conf_ssl(ffparser_schem *ps, conn_serv *serv, ffpars_ctx *a);
 static int conx_conf_upstream(ffparser_schem *ps, fsv_conctx *cx, ffpars_ctx *a);
 static int conx_conf_end(ffparser_schem *ps, fsv_conctx *cx);
 static int conx_conf_kacache(ffparser_schem *ps, fsv_conctx *cx, ffpars_ctx *a);
@@ -180,6 +193,11 @@ static void conn_fin(fsv_conn *c);
 static void conn_oncancel(void *udata);
 static void conn_stop(fsv_conn *c);
 
+// SSL
+static void conn_ssl_handshake(void *udata);
+static ssize_t conn_ssl_recv(fsv_conn *c, void *buf, size_t size, ffaio_handler handler, void *udata);
+static ssize_t conn_ssl_sendfile(fsv_conn *c, ffsf *sf, ffaio_handler handler, void *udata);
+
 
 static const ffpars_arg conm_conf_args[] = {
 	{ "log",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&conm_conf_log) }
@@ -198,6 +216,7 @@ static const ffpars_arg conx_conf_args[] = {
 static const ffpars_arg conn_serv_conf_args[] = {
 	{ "url",  FFPARS_TSTR | FFPARS_FCOPY | FFPARS_FNOTEMPTY | FFPARS_FREQUIRED,  FFPARS_DSTOFF(conn_serv, surl) }
 	, { "weight",  FFPARS_TINT | FFPARS_F8BIT | FFPARS_FNOTZERO,  FFPARS_DSTOFF(conn_serv, weight) }
+	, { "ssl",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&conn_serv_conf_ssl) }
 };
 
 static int conm_conf_log(ffparser_schem *ps, conmodule *mod, ffpars_ctx *a)
@@ -264,6 +283,23 @@ static int conx_conf_kacache(ffparser_schem *ps, fsv_conctx *cx, ffpars_ctx *a)
 	if (cx->cachctx == NULL)
 		return FFPARS_EINTL;
 
+	return 0;
+}
+
+static int conn_serv_conf_ssl(ffparser_schem *ps, conn_serv *serv, ffpars_ctx *a)
+{
+	const ffstr *name = &ps->vals[0];
+	const fsv_modinfo *m = conm->core->findmod(name->ptr, name->len);
+	if (m == NULL)
+		return FFPARS_EBADVAL;
+
+	serv->modssl = m->f->iface("ssl");
+	if (serv->modssl == NULL )
+		return FFPARS_EBADVAL;
+
+	serv->sslctx = serv->modssl->newctx(a);
+	if (serv->sslctx == NULL)
+		return FFPARS_EBADVAL;
 	return 0;
 }
 
@@ -806,6 +842,14 @@ static void conn_connectaddr(fsv_conn *c, ffaddr *adr)
 		goto fail;
 	}
 
+	if (c->curserv->modssl != NULL) {
+		fsv_ssl_newcon opts = {0};
+		opts.logctx = c->logctx;
+		c->sslcon = c->curserv->modssl->newcon(c->curserv->sslctx, &opts, FSV_SSL_CONNECT);
+		if (c->sslcon == NULL)
+			goto fail;
+	}
+
 	c->status = ST_CONNECTING;
 	if (FFAIO_ASYNC == ffaio_connect(&c->aiotask, &conn_onconnect, &adr->a, adr->len)) {
 		conn_resettimer(c, c->cx->connect_timeout);
@@ -855,11 +899,23 @@ static void conn_onconnect(void *udata)
 	conn_freeaddr(c);
 	fflist_ins(&conm->cons, &c->sib);
 	c->cx->connected++;
+
+	if (c->sslcon != NULL) {
+		c->status = ST_HANDSHAKING;
+		conn_ssl_handshake(c);
+		return;
+	}
+
 	conn_notify(c, FSV_CONN_OK);
 }
 
 static void conn_recycle(fsv_conn *c)
 {
+	if (c->sslcon != NULL) {
+		c->curserv->modssl->fin(c->sslcon);
+		c->sslcon = NULL;
+	}
+
 	ffaio_fin(&c->aiotask);
 	if (c->sk != FF_BADSKT) {
 		ffskt_close(c->sk);
@@ -916,6 +972,11 @@ static int conn_disconnect(fsv_conn *c, int flags)
 		ffaio_cancelasync(&c->aiotask, FFAIO_CONNECT, &conn_oncancel);
 		return 0;
 
+	case ST_HANDSHAKING:
+		conm->core->fsv_timerstop(&c->tmr);
+		ffaio_cancelasync(&c->aiotask, FFAIO_RW, &conn_oncancel);
+		return 0;
+
 	case ST_NONE:
 		break;
 
@@ -952,6 +1013,9 @@ static void conn_onexpire(const fftime *now, void *param)
 
 static ssize_t conn_recv(fsv_conn *c, void *buf, size_t size, ffaio_handler handler, void *udata)
 {
+	if (c->curserv->modssl != NULL)
+		return conn_ssl_recv(c, buf, size, handler, udata);
+
 	if (handler == NULL) {
 		ssize_t r = ffaio_result(&c->aiotask);
 
@@ -983,6 +1047,9 @@ static ssize_t conn_send(fsv_conn *c, const void *buf, size_t len, ffaio_handler
 
 static ssize_t conn_sendfile(fsv_conn *c, ffsf *sf, ffaio_handler handler, void *udata)
 {
+	if (c->curserv->modssl != NULL)
+		return conn_ssl_sendfile(c, sf, handler, udata);
+
 	if (handler == NULL) {
 		ssize_t r = ffaio_result(&c->aiotask);
 
@@ -1083,7 +1150,7 @@ static void conn_store_keepalive(fsv_conn *c)
 
 	if (c->dynamic_url)
 		ffstr_free(&c->surl);
-	c->firstserv = c->curserv = NULL;
+	c->firstserv = NULL;
 	c->userptr = NULL;
 	c->status = ST_KEEPALIVE;
 	c->logctx = conm->logctx;
@@ -1251,4 +1318,240 @@ static conn_serv * conx_getserv(fsv_conctx *cx, conn_serv *cur, conn_serv *first
 	}
 
 	return cs;
+}
+
+
+static void conn_ssl_handshake(void *udata)
+{
+	fsv_conn *c = udata;
+	int r;
+	ssize_t t;
+	void *sslbuf_ptr;
+	ssize_t sslbuf_len = -1;
+
+	t = ffaio_result(&c->aiotask);
+
+#ifdef FF_WIN
+	if (t > 0) {
+		//data is sent via ffaio_send()
+		sslbuf_len = t;
+		t = 0;
+	}
+#endif
+
+	if (t != 0) {
+		goto fail;
+	}
+
+	conm->core->fsv_timerstop(&c->tmr);
+
+	for (;;) {
+		r = c->curserv->modssl->handshake(c->sslcon, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				if (fferr_again(fferr_last())
+					&& FFAIO_ASYNC == ffaio_recv(&c->aiotask, &conn_ssl_handshake, NULL, 0)) {
+					c->aiotask.udata = c;
+					conn_resettimer(c, CONN_SSL_RECV_TM);
+					return;
+				}
+				goto fail;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				if (fferr_again(fferr_last())
+					&& FFAIO_ASYNC == ffaio_send(&c->aiotask, &conn_ssl_handshake, sslbuf_ptr, sslbuf_len)) {
+					c->aiotask.udata = c;
+					conn_resettimer(c, CONN_SSL_SEND_TM);
+					return;
+				}
+				goto fail;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			goto fail;
+		}
+
+		break;
+	}
+
+	c->status = ST_NONE;
+	conn_notify(c, FSV_CONN_OK);
+	return;
+
+fail:
+	ffskt_close(c->sk);
+	c->sk = FF_BADSKT;
+	c->status = ST_NONE;
+	errlog(c->logctx, FSV_LOG_ERR, "%S: SSL handshake", &c->host);
+	conn_notify(c, FSV_CONN_ESYS);
+}
+
+static ssize_t conn_ssl_recv(fsv_conn *c, void *buf, size_t size, ffaio_handler handler, void *udata)
+{
+	void *sslbuf_ptr;
+	ssize_t r, sslbuf_len = -1;
+
+	if (handler != NULL) {
+			if (FFAIO_ASYNC == ffaio_send(&c->aiotask, handler, c->sslbuf.ptr, c->sslbuf.len)) {
+		if (c->ssl_renegotiate) {
+				c->aiotask.udata = udata;
+				return FSV_IO_ASYNC;
+			}
+			return FSV_IO_ERR;
+		}
+
+		if (FFAIO_ASYNC == ffaio_recv(&c->aiotask, handler, NULL, 0)) {
+			c->aiotask.udata = udata;
+			return FSV_IO_ASYNC;
+		}
+		return FSV_IO_ERR;
+	}
+
+	r = ffaio_result(&c->aiotask);
+
+#ifdef FF_WIN
+		//data is sent via ffaio_send()
+	if (c->ssl_renegotiate && r > 0) {
+		sslbuf_len = r;
+		r = 0;
+	}
+#endif
+
+	if (r != 0)
+		return r;
+
+	for (;;) {
+	c->ssl_renegotiate = 0;
+		r = c->curserv->modssl->recv(c->sslcon, buf, size, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last()))
+					r = FSV_IO_EAGAIN;
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+			c->ssl_renegotiate = 1;
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last())) {
+					ffstr_set(&c->sslbuf, sslbuf_ptr, sslbuf_len);
+					r = FSV_IO_EAGAIN;
+				}
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			r = FSV_IO_ERR;
+			break;
+		}
+
+		break;
+	}
+	return r;
+}
+
+static ssize_t conn_ssl_sendfile(fsv_conn *c, ffsf *sf, ffaio_handler handler, void *udata)
+{
+	void *sslbuf_ptr;
+	ssize_t r, sslbuf_len = -1;
+
+	if (handler != NULL) {
+			if (FFAIO_ASYNC == ffaio_recv(&c->aiotask, handler, NULL, 0)) {
+		if (c->ssl_renegotiate) {
+				c->aiotask.udata = udata;
+				return FFAIO_ASYNC;
+			}
+			return FSV_IO_ERR;
+		}
+
+		if (FFAIO_ASYNC == ffaio_send(&c->aiotask, handler, c->sslbuf.ptr, c->sslbuf.len)) {
+			c->aiotask.udata = udata;
+			return FSV_IO_ASYNC;
+		}
+		return FSV_IO_ERR;
+	}
+
+	r = ffaio_result(&c->aiotask);
+
+#ifdef FF_WIN
+	if (r > 0) {
+		//data is sent via ffaio_send()
+		sslbuf_len = r;
+		r = 0;
+	}
+#endif
+
+	if (r != 0)
+		return r;
+
+	for (;;) {
+	c->ssl_renegotiate = 0;
+		r = c->curserv->modssl->sendfile(c->sslcon, sf, &sslbuf_ptr, &sslbuf_len);
+
+		switch (r) {
+		case FSV_SSL_WANTREAD:
+			r = ffskt_recv(c->sk, sslbuf_ptr, sslbuf_len, 0);
+			c->ssl_renegotiate = 1;
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last()))
+					r = FSV_IO_EAGAIN;
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_WANTWRITE:
+			r = ffskt_send(c->sk, sslbuf_ptr, sslbuf_len, 0);
+
+			if (r < 0) {
+				r = FSV_IO_ERR;
+				if (fferr_again(fferr_last())) {
+					ffstr_set(&c->sslbuf, sslbuf_ptr, sslbuf_len);
+					r = FSV_IO_EAGAIN;
+				}
+				break;
+			}
+
+			sslbuf_len = r;
+			continue;
+
+		case FSV_SSL_ERR:
+			r = FSV_IO_ERR;
+			break;
+		}
+
+		break;
+	}
+	return r;
 }

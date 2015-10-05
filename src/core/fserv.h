@@ -25,6 +25,7 @@ typedef struct fsv_listen fsv_listen;
 typedef struct fsv_connect fsv_connect;
 typedef struct fsv_resolver fsv_resolver;
 typedef struct fsv_status fsv_status;
+typedef struct fsv_ssl fsv_ssl;
 
 /** Get module interface by name.
 A module implements the function fsv_getmod() and exports it.
@@ -379,8 +380,10 @@ struct fsv_fcache {
 typedef struct fsv_lsnctx fsv_lsnctx;
 typedef struct fsv_lsncon fsv_lsncon;
 
-// enum FSV_LISN_SIG {
-// };
+enum FSV_LISN_SIG {
+	FSV_LISN_SSL_INIT,
+	FSV_LISN_SSL_SNI,
+};
 
 typedef struct fsv_listen_cb {
 	void (*onaccept)(void *userctx, fsv_lsncon *conn);
@@ -403,6 +406,7 @@ enum FSV_LISN_FIN {
 enum FSV_LISN_OPT {
 	FSV_LISN_OPT_USERPTR = 1 //void*
 	, FSV_LISN_OPT_LOG //fsv_logctx*
+	, FSV_LISN_OPT_SSLCTX //SSL context created by mod-ssl.  void*
 };
 
 struct fsv_listen {
@@ -515,3 +519,55 @@ struct fsv_status {
 typedef struct fsv_status_handler {
 	void (*get)(const fsv_status *statusmod);
 } fsv_status_handler;
+
+/* ====================================================================== */
+
+enum FSV_SSL_E {
+	FSV_SSL_ERR = -1,
+	FSV_SSL_WANTREAD = -2,
+	FSV_SSL_WANTWRITE = -3,
+};
+
+enum FSV_SSL_NEWCON_F {
+	FSV_SSL_ACCEPT,
+	FSV_SSL_CONNECT,
+};
+
+enum FSV_SSL_OPT {
+	FSV_SSL_OPT_LOG,
+	FSV_SSL_OPT_SSLCTX,
+};
+
+typedef struct fsv_sslcon fsv_sslcon;
+
+typedef int (*fsv_ssl_srvname_cb)(void *param);
+
+typedef struct fsv_ssl_newcon {
+	fsv_ssl_srvname_cb srvname_cb;
+	void *srvname_param;
+	fsv_logctx *logctx;
+} fsv_ssl_newcon;
+
+struct fsv_ssl {
+	void* (*newctx)(ffpars_ctx *args);
+
+	/**
+	@flags: enum FSV_SSL_NEWCON_F. */
+	fsv_sslcon* (*newcon)(void *ctx, fsv_ssl_newcon *opts, int flags);
+
+	int (*fin)(fsv_sslcon *conn);
+
+	/**
+	@sslbuf, @sslbuf_len: SSL buffer for receive or data to send.
+	Return enum FSV_SSL_E. */
+	int (*handshake)(fsv_sslcon *conn, void **sslbuf, ssize_t *sslbuf_len);
+	ssize_t (*recv)(fsv_sslcon *conn, void *buf, size_t size, void **sslbuf, ssize_t *sslbuf_len);
+	ssize_t (*sendfile)(fsv_sslcon *conn, ffsf *sf, void **sslbuf, ssize_t *sslbuf_len);
+	int (*shut)(fsv_sslcon *conn, void **sslbuf, ssize_t *sslbuf_len);
+
+	ssize_t (*getvar)(fsv_sslcon *conn, const char *name, size_t namelen, void *dst, size_t cap);
+
+	/**
+	@opt: enum FSV_SSL_OPT. */
+	int (*setopt)(fsv_sslcon *conn, int opt, void *data);
+};

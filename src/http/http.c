@@ -59,6 +59,7 @@ static int hthost_conf_target_ex(ffparser_schem *ps, httphost *h, ffpars_ctx *ar
 static int hthost_conf_target(ffparser_schem *ps, httphost *h, ffpars_ctx *args);
 static int hthost_conf_targetany(ffparser_schem *ps, httphost *h, ffpars_ctx *args);
 static int hthost_conf_respfilter(ffparser_schem *ps, httphost *h, ffpars_ctx *args);
+static int hthost_conf_ssl(ffparser_schem *ps, httphost *h, ffpars_ctx *args);
 static int hthost_conf_end(ffparser_schem *ps, httphost *h);
 
 static int httgt_conf_index(ffparser_schem *ps, httptarget *tgt, const ffstr *val);
@@ -173,6 +174,8 @@ static const ffpars_arg hthost_conf_args[] = {
 	, { "target",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FMULTI | FFPARS_FNOTEMPTY,  FFPARS_DST(&hthost_conf_target) }
 	, { "path",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FMULTI | FFPARS_FNOTEMPTY,  FFPARS_DST(&hthost_conf_target) }
 	, { "target_any",  FFPARS_TOBJ,  FFPARS_DST(&hthost_conf_targetany) }
+
+	, { "ssl",  FFPARS_TOBJ | FFPARS_FOBJ1,  FFPARS_DST(&hthost_conf_ssl) }
 
 	, { NULL,  FFPARS_TCLOSE,  FFPARS_DST(&hthost_conf_end) }
 };
@@ -481,6 +484,24 @@ static int hthost_conf_targetany(ffparser_schem *ps, httphost *h, ffpars_ctx *ar
 	return 0;
 }
 
+static int hthost_conf_ssl(ffparser_schem *ps, httphost *h, ffpars_ctx *args)
+{
+	const fsv_ssl *ssl;
+	const ffstr *modname = &ps->vals[0];
+	const fsv_modinfo *tmod = httpm->core->findmod(modname->ptr, modname->len);
+	if (tmod == NULL)
+		return HTTP_CONF_ENOMOD;
+
+	ssl = tmod->f->iface("ssl");
+	if (ssl == NULL)
+		return HTTP_CONF_ENOIFACE;
+
+	h->sslctx = ssl->newctx(args);
+	if (h->sslctx == NULL)
+		return HTTP_CONF_EMODCTX;
+	return 0;
+}
+
 static int hthost_conf_end(ffparser_schem *ps, httphost *h)
 {
 	ffstr_setz(&h->name, h->names.ptr);
@@ -693,6 +714,33 @@ fail:
 
 static int http_onsig(fsv_lsncon *conn, void *userptr, int sig)
 {
+	httphost *h = NULL;
+	ffstr name;
+
+	switch (sig) {
+
+	case FSV_LISN_SSL_SNI:
+		name.len = httpm->lisn->getvar(conn, FFSTR("ssl_servername"), &name.ptr, 0);
+		if (name.len == -1)
+			return 0;
+
+		h = http_gethost(conn, &name);
+		// break
+
+	case FSV_LISN_SSL_INIT:
+		if (h == NULL)
+			h = http_defhost(conn);
+
+		if (h->sslctx == NULL) {
+			errlog(httpm->logctx, FSV_LOG_ERR, "host '%S' is not configured for SSL"
+				, &h->name);
+			return -1;
+		}
+
+		httpm->lisn->setopt(conn, FSV_LISN_OPT_SSLCTX, h->sslctx);
+		break;
+	}
+
 	return 0;
 }
 
