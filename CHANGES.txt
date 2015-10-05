@@ -1,3 +1,13 @@
+fserv v0.25 - Oct 5, 2015
+
+ * http, http-proxy: max_header_size is 8k by default
+ - http.static-file: cached file descriptors were not handled correctly in some cases
+ - http-proxy: fix segfault if request headers were too large
+ - http-proxy: large request headers were not supported
+ - http: large response headers were not supported
+ - http: connection could hang while sending error response (v0.24 bug)
+
+
 fserv v0.24 - June 26, 2015
 
  - http-proxy: HTTP connection with a client could hang if more input data is received while output data is still being sent

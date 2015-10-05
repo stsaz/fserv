@@ -47,7 +47,7 @@ endif
 else #windows:
 
 TARGET := x64
-LDFLAGS := -lws2_32
+LDFLAGS := -lws2_32 -L$(FF)/3pt/win-x64
 SO := dll
 CP := cp -u -v -p
 PACK := zip -9 -r -v
@@ -70,7 +70,14 @@ override LDFLAGS += -pthread \
 	-Wl,-gc-sections
 
 # 3-party libraries
+ifeq ($(OSTYPE),unix)
 ZLIB := -lz
+SSL_LIBS := -lcrypto -lssl
+
+else
+SSL_LIBS := -lssleay32 -leay32
+ZLIB := -lzlib1
+endif
 
 include ./makerules
 
