@@ -958,13 +958,12 @@ static void http_resphdrs(fsv_httphandler *h)
 {
 	httpcon *c = (httpcon*)h->httpcon;
 	ffhttp_cook *resp = h->resp;
-	char dt[64], hdrs[HTTP_MAX_RESPHDR];
-	size_t i, nhdrs;
+	char dt[64];
+	ffstr hdrs = {0};
+	size_t i;
 	ffiovec *iov;
 
-	ffmemcpy(hdrs, resp->buf.ptr, resp->buf.len);
-	nhdrs = resp->buf.len;
-	resp->buf = c->respbuf;
+	ffstr_acqstr3(&hdrs, &resp->buf);
 
 	if (resp->code == 0)
 		ffhttp_setstatus(resp, FFHTTP_500_INTERNAL_SERVER_ERROR);
@@ -992,20 +991,21 @@ static void http_resphdrs(fsv_httphandler *h)
 	ffhttp_addihdr(resp, FFHTTP_SERVER, FFSTR("fserv/" FSV_VER));
 	ffhttp_cookflush(resp);
 
-	http_addhdrs(c, hdrs, nhdrs, resp);
+	http_addhdrs(c, hdrs.ptr, hdrs.len, resp);
+	ffstr_free(&hdrs);
 	if (0 != http_addhdrs_fromconf(c, resp))
 		goto fail;
 
 	if (0 != ffhttp_cookfin(resp)) {
-		errlog(h->logctx, FSV_LOG_ERR, "too large response headers");
+		syserrlog(h->logctx, FSV_LOG_ERR, "%e", FFERR_BUFALOC);
 		goto fail;
 	}
-	c->respbuf.len = resp->buf.len;
+	c->resplen = c->resp.buf.len;
 
-	dbglog(c->logctx, FSV_LOG_DBGFLOW, "response headers: [%L] %S", c->respbuf.len, &c->respbuf);
+	dbglog(c->logctx, FSV_LOG_DBGFLOW, "response headers: [%L] %S", c->resp.buf.len, &c->resp.buf);
 
 	if (h->req->method == FFHTTP_HEAD) {
-		h->http->send(h->id, c->respbuf.ptr, c->respbuf.len, FSV_HTTP_NOINPUT);
+		h->http->send(h->id, c->resp.buf.ptr, c->resp.buf.len, FSV_HTTP_NOINPUT);
 		return;
 	}
 
@@ -1018,7 +1018,7 @@ static void http_resphdrs(fsv_httphandler *h)
 	h->id->udata = (void*)1;
 
 	iov = c->hdr_iovs;
-	ffiov_set(iov, c->respbuf.ptr, c->respbuf.len);
+	ffiov_set(iov, c->resp.buf.ptr, c->resp.buf.len);
 	iov++;
 	for (i = 0;  i < h->data->ht.hdr_cnt;  i++) {
 		*iov++ = h->data->ht.headers[i];
@@ -1030,6 +1030,7 @@ static void http_resphdrs(fsv_httphandler *h)
 	return;
 
 fail:
+	ffstr_free(&hdrs);
 	h->http->send(h->id, NULL, 0, FSV_HTTP_ERROR);
 }
 

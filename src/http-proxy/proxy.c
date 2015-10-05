@@ -407,7 +407,7 @@ static int htpx_newctx(fsv_http_hdlctx *hc)
 	fflist_ins(&htpxm->ctxs, &px->sib);
 
 	px->read_timeout = px->write_timeout = 65;
-	px->max_header_size = 4 * 1024;
+	px->max_header_size = 8 * 1024;
 	px->read_header_growby = 1024;
 	px->respbody_buf_size = 32 * 1024;
 	px->httptunnel = HTPX_TUNNEL_OFF;

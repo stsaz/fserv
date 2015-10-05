@@ -545,10 +545,9 @@ static int htpx_mkreq(htpxcon *c, ffstr *dstbuf, uint64 cont_len)
 	ffstr3 tmp = {0};
 	ffstr schem;
 	ffhttp_cook req;
-	char stkbuf[4 * 1024];
 	ffurl url;
 
-	ffhttp_cookinit(&req, stkbuf, FFCNT(stkbuf));
+	ffhttp_cookinit(&req, NULL, 0);
 
 	ffurl_init(&url);
 	er = ffurl_parse(&url, c->serv_url.ptr, c->serv_url.len);
@@ -592,12 +591,6 @@ static int htpx_mkreq(htpxcon *c, ffstr *dstbuf, uint64 cont_len)
 		goto done;
 
 	if (0 != ffhttp_cookfin(&req)) {
-		errlog(c->logctx, FSV_LOG_ERR, "Too large request");
-		ret = FFERR_INTERNAL;
-		goto done;
-	}
-
-	if (NULL == ffstr_copy(dstbuf, req.buf.ptr, req.buf.len)) {
 		ret = FFERR_BUFALOC;
 		goto done;
 	}
@@ -608,6 +601,8 @@ done:
 	ffarr_free(&tmp);
 	if (ret == FFERR_BUFALOC)
 		syserrlog(c->logctx, FSV_LOG_ERR, "%e", ret);
+	ffstr_acqstr3(dstbuf, &req.buf);
+	ffhttp_cookdestroy(&req);
 	return ret;
 }
 

@@ -151,8 +151,8 @@ struct httpcon {
 	fsv_httpfilter *hfrecv;
 
 	//response:
-	ffstr3 respbuf;
 	ffhttp_cook resp;
+	uint resplen;
 	struct { FFARR(httpfilter) } respchain;
 	ffiovec *hdr_iovs;
 	struct { FFARR(ffiovec) } chunked_iovs;
@@ -200,7 +200,6 @@ enum HTTP_CONF_E {
 
 enum {
 	HTTP_LOG_READ_DATAWND = 16
-	, HTTP_MAX_RESPHDR = 4096
 };
 
 enum HTTP_TMR {

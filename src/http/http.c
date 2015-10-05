@@ -580,7 +580,7 @@ static void * httpm_create(const fsv_core *core, ffpars_ctx *args, fsv_modinfo *
 	httpm->read_header_tmout = 65;
 	httpm->keepalive_tmout = 65;
 	httpm->read_header_growby = 1024;
-	httpm->max_header_size = 4 * 1024;
+	httpm->max_header_size = 8 * 1024;
 	httpm->max_keepalive_requests = 64;
 	httpm->pagesize = core->conf()->pagesize;
 
@@ -680,11 +680,6 @@ static void http_onaccept(void *userctx, fsv_lsncon *conn)
 		goto fail;
 	}
 
-	if (NULL == ffarr_alloc(&c->respbuf, HTTP_MAX_RESPHDR)) {
-		syserrlog(httpm->logctx, FSV_LOG_ERR, "%e", FFERR_BUFALOC);
-		goto fail;
-	}
-
 	fflist_ins(&httpm->cons, &c->sib);
 	http_prepare(c);
 	http_start(c);
@@ -753,7 +748,7 @@ static void http_prepare(httpcon *c)
 	c->logctx = (fsv_logctx*)&c->lctx;
 	c->notstarted = 1;
 
-	ffhttp_cookinit(&c->resp, c->respbuf.ptr, c->respbuf.cap);
+	ffhttp_cookinit(&c->resp, NULL, 0);
 
 	{
 	size_t nreq = ffatom_incret(&httpm->nrequests);
@@ -774,7 +769,7 @@ void http_reset(httpcon *c)
 {
 	httpcon c2;
 
-	c->respbuf.len = 0;
+	ffhttp_cookreset(&c->resp);
 	c2 = *c;
 
 	ffmem_tzero(c);
@@ -785,7 +780,7 @@ void http_reset(httpcon *c)
 	c->keepalive_cnt = c2.keepalive_cnt;
 	c->notstarted = !c2.pipelined;
 	c->pipelined = c2.pipelined;
-	c->respbuf = c2.respbuf;
+	c->resp = c2.resp;
 	c->reqhdrbuf = c2.reqhdrbuf;
 	c->reqchain = c2.reqchain;
 	c->respchain = c2.respchain;
@@ -809,9 +804,9 @@ void http_close(httpcon *c)
 	httpm->core->utask(&c->rtask, FSVCORE_TASKDEL);
 
 	ffarr_free(&c->reqhdrbuf);
-	ffarr_free(&c->respbuf);
 	ffarr_free(&c->reqchain);
 	ffarr_free(&c->respchain);
+	ffhttp_cookdestroy(&c->resp);
 	ffmem_free(c);
 }
 
@@ -862,8 +857,8 @@ void http_accesslog(httpcon *c)
 	stop = httpm->core->fsv_gettime();
 	fftime_diff(&c->start_time, &stop);
 
-	if (c->nwrite > c->respbuf.len)
-		sent_body = c->nwrite - c->respbuf.len;
+	if (c->nwrite > c->resplen)
+		sent_body = c->nwrite - c->resplen;
 
 	if ((c->req.h.has_body || c->req.method == FFHTTP_CONNECT)
 		&& c->nread > c->req.h.len)
@@ -877,7 +872,7 @@ void http_accesslog(httpcon *c)
 		" %S" //additional info
 		"  %Ums" //response time
 		, (int)c->req.h.len, recvd_body, &req_line
-		, (int)c->respbuf.len, sent_body, &c->resp.status
+		, c->resplen, sent_body, &c->resp.status
 		, &addinfo
 		, fftime_ms(&stop));
 
