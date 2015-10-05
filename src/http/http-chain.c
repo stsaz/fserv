@@ -107,7 +107,7 @@ static void http_respchain_continue(void *param)
 {
 	httpfilter *hf = param;
 	httpcon *c = hf->con;
-	if (0 != http_chain_process(c, &hf, hf->flags))
+	if (CHAIN_NOP == http_chain_process(c, &hf, hf->flags))
 		return;
 	http_callmod(c, hf);
 }
