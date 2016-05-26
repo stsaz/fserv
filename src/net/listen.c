@@ -198,24 +198,11 @@ static int lsnx_conf_log(ffparser_schem *ps, lisnctx *lx, ffpars_ctx *a)
 static int lsnx_conf_listen(ffparser_schem *ps, lisnctx *lx, const ffstr *s)
 {
 	ffstr ip, port;
-	const char *colon = ffs_findc(s->ptr, s->len, ':');
-	if (colon == NULL)
-		return FFPARS_EBADVAL;
-	ffstr_set(&ip, s->ptr, colon - s->ptr);
-
-	colon++;
-	ffstr_set(&port, colon, (s->ptr + s->len) - colon);
-	if (port.len == 0)
+	if (0 != ffaddr_split(s->ptr, s->len, &ip, &port))
 		return FFPARS_EBADVAL;
 
 	if (ip.len == 0)
 		lx->ip6dual = 1;
-	else if (ip.ptr[0] == '[') {
-		if (ip.len < FFSLEN("[x]") || ip.ptr[ip.len - 1] != ']')
-			return FFPARS_EBADVAL;
-		ip.ptr += FFSLEN("[");
-		ip.len -= FFSLEN("[]");
-	}
 
 	if (0 != ffaddr_set(&lx->addr, ip.ptr, ip.len, port.ptr, port.len))
 		return FFPARS_EBADVAL;
