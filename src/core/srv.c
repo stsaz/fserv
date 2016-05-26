@@ -97,11 +97,12 @@ static fserver *serv;
 // FSERV MAIN
 static void * srv_create(void);
 static void srv_destroy(void);
+static int srv_setroot(const char *dir, size_t len);
 static int srv_readconf(const char *fn);
 static int srv_sig(int signo);
 static const char * srv_errstr(void);
 static const fsv_main fsv_mainiface = {
-	&srv_create, &srv_destroy, &srv_readconf, &srv_sig, &srv_errstr
+	&srv_create, &srv_destroy, &srv_setroot, &srv_readconf, &srv_sig, &srv_errstr
 };
 FF_EXTN FF_EXP const fsv_main * fsv_getmain()
 {
@@ -270,7 +271,7 @@ static const char * srv_errstr(void)
 
 static const ffpars_arg srv_args[] = {
 	{ "mod",  FFPARS_TOBJ | FFPARS_FOBJ1 | FFPARS_FMULTI,  FFPARS_DST(&srv_conf_mod) }
-	, { "root",  FFPARS_TSTR | FFPARS_FNOTEMPTY | FFPARS_FREQUIRED,  FFPARS_DST(&srv_conf_rootdir) }
+	, { "root",  FFPARS_TSTR | FFPARS_FNOTEMPTY,  FFPARS_DST(&srv_conf_rootdir) }
 	, { "event_pool",  FFPARS_TINT | FFPARS_F16BIT | FFPARS_FNOTZERO,  FFPARS_DSTOFF(fserver, events_count) }
 	, { "timer_resolution",  FFPARS_TINT | FFPARS_F16BIT | FFPARS_FNOTZERO,  FFPARS_DSTOFF(fserver, timer_resol) }
 	, { "max_fd_number",  FFPARS_TINT | FFPARS_FNOTZERO,  FFPARS_DST(&srv_conf_maxfd) }
@@ -300,13 +301,17 @@ static int srv_readconf(const char *fn)
 
 static int srv_conf_rootdir(ffparser_schem *ps, fserver *srv, const ffstr *s)
 {
+	return srv_setroot(s->ptr, s->len);
+}
+
+static int srv_setroot(const char *dir, size_t len)
+{
 	fffileinfo fi;
 	ffstr *root = &serv->rootdir;
-
-	if (NULL == ffstr_alloc(root, s->len + FFSLEN("/0")))
+	if (NULL == ffstr_alloc(root, len + FFSLEN("/0")))
 		return FFPARS_ESYS;
 
-	root->len = ffpath_norm(root->ptr, s->len, s->ptr, s->len, 0);
+	root->len = ffpath_norm(root->ptr, len, dir, len, 0);
 	if (root->len == 0)
 		return FFPARS_EBADVAL;
 

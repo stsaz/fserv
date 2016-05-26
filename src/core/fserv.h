@@ -47,6 +47,8 @@ struct fsv_main {
 
 	void (*destroy)(void);
 
+	int (*setroot)(const char *dir, size_t len);
+
 	/** Return 0 on success. */
 	int (*readconf)(const char *fn);
 
