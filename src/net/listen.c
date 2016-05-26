@@ -13,7 +13,7 @@ typedef struct lisnmod {
 	fsv_logctx *logctx;
 	fflist ctxs; //lisnctx[]
 	fflist cons; //active connections.  fsv_lsncon[]
-	fflist recycled_cons; //fsv_lsncon[]
+	fflist1 recycled_cons; //fsv_lsncon[]
 	fffd kq;
 	fsv_timer queued_cons_timer;
 	unsigned fd_limit :1;
@@ -54,7 +54,10 @@ typedef struct lisnctx {
 } lisnctx;
 
 struct fsv_lsncon {
+	union {
 	fflist_item sib;
+	fflist1_item recycled;
+	};
 	lisnctx *lx;
 	fsv_logctx *logctx;
 	ffskt sk;
@@ -249,7 +252,6 @@ static void * lsnm_create(const fsv_core *core, ffpars_ctx *a, fsv_modinfo *m)
 
 	fflist_init(&lsnm->ctxs);
 	fflist_init(&lsnm->cons);
-	fflist_init(&lsnm->recycled_cons);
 	lsnm->max_cons = 10000;
 	lsnm->core = core;
 	lsnm->logctx = conf->logctx;
@@ -277,7 +279,12 @@ static void lsnx_fin(lisnctx *lx)
 static void lsnm_destroy(void)
 {
 	FFLIST_ENUMSAFE(&lsnm->ctxs, lsnx_fin, lisnctx, sib);
-	FFLIST_ENUMSAFE(&lsnm->recycled_cons, lsn_fincon, fsv_lsncon, sib);
+
+	fsv_lsncon *c;
+	while (NULL != (c = (void*)fflist1_pop(&lsnm->recycled_cons))) {
+		lsn_fincon(FF_GETPTR(fsv_lsncon, recycled, c));
+	}
+
 	ffmem_free(lsnm);
 	lsnm = NULL;
 }
@@ -554,10 +561,8 @@ static fsv_lsncon * lsn_getconn(lisnctx *lx)
 		return NULL;
 	}
 
-	if (lsnm->recycled_cons.len != 0) {
-		c = FF_GETPTR(fsv_lsncon, sib, lsnm->recycled_cons.last);
-		fflist_rm(&lsnm->recycled_cons, &c->sib);
-		return c;
+	if (NULL != (c = (void*)fflist1_pop(&lsnm->recycled_cons))) {
+		return FF_GETPTR(fsv_lsncon, recycled, c);
 	}
 
 	if (lsnm->cons.len == lsnm->max_cons) {
@@ -609,7 +614,7 @@ static void lsn_recycle(fsv_lsncon *c)
 	FF_SAFECLOSE(c->sk, FF_BADSKT, ffskt_close);
 	ffaio_fin(&c->aiotask);
 	c->lx = NULL;
-	fflist_ins(&lsnm->recycled_cons, &c->sib);
+	fflist1_push(&lsnm->recycled_cons, &c->recycled);
 }
 
 /** Notify parent module. */

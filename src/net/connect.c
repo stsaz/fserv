@@ -14,7 +14,7 @@ typedef struct conmodule {
 	fsv_logctx *logctx;
 	fflist ctxs; //connctx[]
 	fflist cons; //active connections.  fsv_conn[]
-	fflist recycled_cons; //empty objects for reuse.  fsv_conn[]
+	fflist1 recycled_cons; //empty objects for reuse.  fsv_conn[]
 	fffd kq;
 
 	//conf:
@@ -58,7 +58,10 @@ struct fsv_conctx {
 };
 
 struct fsv_conn {
+	union {
 	fflist_item sib;
+	fflist1_item recycled;
+	};
 	fsv_conctx *cx;
 	ffskt sk;
 	ffaio_task aiotask;
@@ -346,7 +349,6 @@ static void * conm_create(const fsv_core *core, ffpars_ctx *a, fsv_modinfo *mi)
 
 	fflist_init(&conm->ctxs);
 	fflist_init(&conm->cons);
-	fflist_init(&conm->recycled_cons);
 	conm->max_cons = 10000;
 	conm->core = core;
 	conm->logctx = conf->logctx;
@@ -375,7 +377,12 @@ static void conx_fin(fsv_conctx *cx)
 static void conm_destroy(void)
 {
 	FFLIST_ENUMSAFE(&conm->ctxs, conx_fin, fsv_conctx, sib);
-	FFLIST_ENUMSAFE(&conm->recycled_cons, conn_fin, fsv_conn, sib);
+
+	fsv_conn *c;
+	while (NULL != (c = (void*)fflist1_pop(&conm->recycled_cons))) {
+		conn_fin(FF_GETPTR(fsv_conn, recycled, c));
+	}
+
 	ffmem_free(conm);
 	conm = NULL;
 }
@@ -518,10 +525,8 @@ static fsv_conn * conn_getconn(fsv_conctx *cx, fsv_logctx *logctx)
 {
 	fsv_conn *c;
 
-	if (conm->recycled_cons.len != 0) {
-		c = FF_GETPTR(fsv_conn, sib, conm->recycled_cons.last);
-		fflist_rm(&conm->recycled_cons, &c->sib);
-		return c;
+	if (NULL != (c = (void*)fflist1_pop(&conm->recycled_cons))) {
+		return FF_GETPTR(fsv_conn, recycled, c);
 	}
 
 	if (conm->cons.len == conm->max_cons) {
@@ -937,7 +942,7 @@ static void conn_recycle(fsv_conn *c)
 	c->status = ST_NONE;
 	c->logctx = NULL;
 	c->cx = NULL;
-	fflist_ins(&conm->recycled_cons, &c->sib);
+	fflist1_push(&conm->recycled_cons, &c->recycled);
 }
 
 static void conn_oncancel(void *udata)
