@@ -21,7 +21,7 @@ static const fsv_mod fsv_test_mod = {
 
 static void oninit(void)
 {
-	ffos_init();
+	ffmem_init();
 	ffskt_init(FFSKT_WSAFUNCS);
 }
 FFDL_ONINIT(oninit, NULL)

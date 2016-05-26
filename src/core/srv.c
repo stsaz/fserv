@@ -199,14 +199,6 @@ static void mod_destroy(fmodule *m)
 	ffmem_free(m);
 }
 
-#if defined FF_MSVC || defined FF_MINGW
-enum {
-	SIGINT = 1
-	, SIGHUP
-	, SIGUSR1
-};
-#endif
-
 static const int sigs[] = { SIGINT, SIGHUP, SIGUSR1 };
 
 static void srv_destroy(void)
@@ -724,7 +716,7 @@ static void srv_handlesig(void *t)
 	int r;
 
 	for (;;) {
-		r = ffsig_read(&serv->sigs_task);
+		r = ffsig_read(&serv->sigs_task, NULL);
 
 		if (r == -1) {
 			if (!fferr_again(fferr_last()))
@@ -889,7 +881,7 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 				continue;
 			}
 
-			r = ffpars_schemrun(ps, r);
+			r = ffconf_schemrun(ps);
 			if (ffpars_iserr(r))
 				goto err;
 		}

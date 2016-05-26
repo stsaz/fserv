@@ -96,7 +96,7 @@ static ssize_t http_getvar_hdr(httpcon *c, const ffstr *nm, void *dst);
 
 static void oninit(void)
 {
-	ffos_init();
+	ffmem_init();
 	if (0 != ffskt_init(FFSKT_WSAFUNCS)
 		|| 0 != ffhttp_initheaders())
 		ffps_exit(1);

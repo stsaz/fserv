@@ -7,7 +7,7 @@ Copyright (c) 2014 Simon Zolin
 
 
 typedef struct loggzip {
-	ffgz gz;
+	fflz gz;
 	fffd fd;
 	ffstr3 buf;
 
@@ -52,12 +52,12 @@ static int logz_conf_gzipbufsize(ffparser_schem *ps, loggzip *lz, const int64 *n
 	int half = (int)*n / 2;
 	int i;
 
-	i = ffgz_wbits(half);
+	i = fflz_wbits(half);
 	if (i == -1)
 		return FFPARS_EBADVAL;
 	lz->gzwbits = i;
 
-	i = ffgz_memlevel(half);
+	i = fflz_memlevel(half);
 	if (i == -1)
 		return FFPARS_EBADVAL;
 	lz->gzmemlev = i;
@@ -87,8 +87,8 @@ static fsv_log_outptr * logz_create(ffpars_ctx *a)
 		return NULL;
 
 	lz->gzlev = 6;
-	lz->gzwbits = ffgz_wbits(0);
-	lz->gzmemlev = ffgz_memlevel(0);
+	lz->gzwbits = fflz_wbits(0);
+	lz->gzmemlev = fflz_memlevel(0);
 	lz->fd = FF_BADFD;
 	lz->bufsize = 4 * 1024;
 
@@ -174,20 +174,20 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 	int rc = 1;
 	int r;
 	char buf[16 * 1024];
-	ffgz *gz = &lz->gz;
+	fflz *gz = &lz->gz;
 
-	if (0 != ffgz_deflateinit(gz, lz->gzlev, lz->gzwbits + 16, lz->gzmemlev)) {
-		logm_err("init deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
+	if (0 != fflz_deflateinit(gz, lz->gzlev, lz->gzwbits + 16, lz->gzmemlev)) {
+		logm_err("init deflate: %S: %s", &lz->fn, fflz_errstr(gz));
 		return 1;
 	}
-	ffgz_setin(gz, d, len);
+	fflz_setin(gz, d, len);
 
 	for (;;) {
-		ffgz_setout(gz, buf, FFCNT(buf));
+		fflz_setout(gz, buf, FFCNT(buf));
 
-		r = ffgz_deflate(gz, Z_FINISH, NULL, &len);
+		r = fflz_deflate(gz, Z_FINISH, NULL, &len);
 		if (r != Z_OK && r != Z_STREAM_END) {
-			logm_err("deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
+			logm_err("deflate: %S: %s", &lz->fn, fflz_errstr(gz));
 			goto end;
 		}
 
@@ -208,7 +208,7 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 	rc = 0;
 
 end:
-	if (0 != ffgz_deflatefin(gz))
-		logm_err("fin deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
+	if (0 != fflz_deflatefin(gz))
+		logm_err("fin deflate: %S: %s", &lz->fn, fflz_errstr(gz));
 	return rc;
 }

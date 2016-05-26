@@ -8,7 +8,7 @@ Copyright 2014 Simon Zolin.
 
 static void oninit(void)
 {
-	ffos_init();
+	ffmem_init();
 	if (0 != ffskt_init(FFSKT_WSAFUNCS))
 		ffps_exit(1);
 }

@@ -146,7 +146,7 @@ static int args_parse(cmdline *opts, const char **argv, int argc)
 		r = ffpsarg_parse(&p, argv[i], &n);
 		i += n;
 
-		r = ffpars_schemrun(&ps, r);
+		r = ffpsarg_schemrun(&ps);
 		if (ffpars_iserr(r))
 			goto end;
 	}
@@ -260,7 +260,7 @@ int main(int argc, const char **argv)
 
 	ffmem_tzero(&opts);
 	opts.sig = -1;
-	ffos_init();
+	ffmem_init();
 
 	{
 		int r = args_parse(&opts, argv, argc);

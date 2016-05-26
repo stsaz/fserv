@@ -88,7 +88,7 @@ static const char *const filt_type_str[] = { "response", "request" };
 
 static void oninit(void)
 {
-	ffos_init();
+	ffmem_init();
 	if (0 != ffskt_init(FFSKT_WSAFUNCS)
 		|| 0 != ffhttp_initheaders())
 		ffps_exit(1);

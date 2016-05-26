@@ -68,7 +68,7 @@ $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/ssl/%.c $(FSERV_H)
 	$(C)  $(CFLAGS) -I$(FF)/3pt  $<  -o$@
 
 SSL_O = $(OBJ_DIR)/ssl.o \
-	$(FF_ALL_OBJS) $(FF_OBJ_DIR)/ffssl.o
+	$(FF_ALL_OBJS) $(FF_OBJ_DIR)/ffutf8.o $(FF_OBJ_DIR)/ffssl.o
 ssl.$(SO): $(SSL_O)
 	$(LD)  -shared $(SSL_O) $(LDFLAGS) $(SSL_LIBS)  -o$@
 

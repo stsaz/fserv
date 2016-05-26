@@ -52,7 +52,7 @@ static void logx_output(fsv_logctx *lx, uint lev, const char *msg, size_t len);
 
 static void oninit(void)
 {
-	ffos_init();
+	ffmem_init();
 }
 FFDL_ONINIT(oninit, NULL)
 

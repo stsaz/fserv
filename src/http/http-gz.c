@@ -28,7 +28,7 @@ typedef struct gz_ctx {
 
 typedef struct gzcon {
 	ffstr buf;
-	ffgz gz;
+	fflz gz;
 	uint64 inall
 		, outall;
 } gzcon;
@@ -76,12 +76,12 @@ const ffpars_arg gz_conf_args[] = {
 
 static int gz_conf_gzipbufsize(ffparser_schem *ps, gz_ctx *zx, const int64 *n)
 {
-	int i = ffgz_wbits((int)*n / 2);
+	int i = fflz_wbits((int)*n / 2);
 	if (i == -1)
 		return FFPARS_EBADVAL;
 	zx->gzwbits = i;
 
-	i = ffgz_memlevel((int)*n / 2);
+	i = fflz_memlevel((int)*n / 2);
 	if (i == -1)
 		return FFPARS_EBADVAL;
 	zx->gzmemlev = i;
@@ -150,8 +150,8 @@ static int gz_newctx(fsv_http_hdlctx *ctx)
 
 	zx->buf_size = 16 * 1024;
 	zx->min_contlen = 1024;
-	zx->gzmemlev = ffgz_memlevel(32 * 1024);
-	zx->gzwbits = ffgz_wbits(32 * 1024);
+	zx->gzmemlev = fflz_memlevel(32 * 1024);
+	zx->gzwbits = fflz_wbits(32 * 1024);
 	zx->gzlevel = 6;
 
 	ctx->hctx = zx;
@@ -172,12 +172,12 @@ static gzcon* gz_newcon(gz_ctx *zx)
 		goto err;
 
 	c->gz.opaque = c;
-	r = ffgz_deflateinit(&c->gz, zx->gzlevel, zx->gzwbits + 16, zx->gzmemlev);
+	r = fflz_deflateinit(&c->gz, zx->gzlevel, zx->gzwbits + 16, zx->gzmemlev);
 	if (r != Z_OK) {
 		ffstr_free(&c->buf);
 		goto err;
 	}
-	ffgz_setout(&c->gz, c->buf.ptr, zx->buf_size);
+	fflz_setout(&c->gz, c->buf.ptr, zx->buf_size);
 
 	return c;
 
@@ -230,7 +230,7 @@ static void gz_onevent(fsv_httphandler *h)
 			goto fail;
 		}
 
-		ffgz_setin(&c->gz, chunk.ptr, chunk.len);
+		fflz_setin(&c->gz, chunk.ptr, chunk.len);
 
 		flush = Z_NO_FLUSH;
 		if (n == 0) {
@@ -240,13 +240,13 @@ static void gz_onevent(fsv_httphandler *h)
 				flush = Z_SYNC_FLUSH;
 		}
 
-		r = ffgz_deflate(&c->gz, flush, &rd, &wr);
+		r = fflz_deflate(&c->gz, flush, &rd, &wr);
 		c->inall += rd;
 		c->outall += wr;
 
 		if (r != Z_OK && r != Z_STREAM_END) {
 			fsv_errlog(h->logctx, FSV_LOG_ERR, GZ_MODNAME, NULL, "deflate(): (%d) %s"
-				, (int)r, ffgz_errstr(&c->gz));
+				, (int)r, fflz_errstr(&c->gz));
 			goto fail;
 		}
 
@@ -257,10 +257,10 @@ static void gz_onevent(fsv_httphandler *h)
 		c->buf.len += wr;
 
 		if (r == Z_STREAM_END) {
-			r = ffgz_deflatefin(&c->gz);
+			r = fflz_deflatefin(&c->gz);
 			if (r != 0) {
 				fsv_errlog(h->logctx, FSV_LOG_WARN, GZ_MODNAME, NULL, "deflateEnd(): (%d) %s"
-					, r, ffgz_errstr(&c->gz));
+					, r, fflz_errstr(&c->gz));
 			}
 			c->gz.opaque = NULL;
 			break;
@@ -281,13 +281,13 @@ static void gz_onevent(fsv_httphandler *h)
 
 	datalen = c->buf.len;
 	c->buf.len = 0;
-	ffgz_setout(&c->gz, c->buf.ptr, zx->buf_size);
+	fflz_setout(&c->gz, c->buf.ptr, zx->buf_size);
 
 	h->http->send(h->id, c->buf.ptr, datalen, f);
 	return;
 
 fail:
-	ffgz_deflatefin(&c->gz);
+	fflz_deflatefin(&c->gz);
 	c->gz.opaque = NULL;
 
 err:
@@ -300,10 +300,10 @@ static void gz_ondone(fsv_httphandler *h)
 	gzcon *c = h->id->udata;
 
 	if (c->gz.opaque != NULL) {
-		int r = ffgz_deflatefin(&c->gz);
+		int r = fflz_deflatefin(&c->gz);
 		if (r != 0) {
 			fsv_errlog(h->logctx, FSV_LOG_WARN, GZ_MODNAME, NULL, "deflateEnd(): (%d) %s"
-				, r, ffgz_errstr(&c->gz));
+				, r, fflz_errstr(&c->gz));
 		}
 	}
 

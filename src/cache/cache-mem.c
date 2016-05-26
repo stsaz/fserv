@@ -126,7 +126,7 @@ static ffbool cach_key_equal(const cach_key *ckey, const char *key, size_t len, 
 
 static void oninit(void)
 {
-	ffos_init();
+	ffmem_init();
 }
 FFDL_ONINIT(oninit, NULL)
 

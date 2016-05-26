@@ -183,7 +183,7 @@ static void * sslm_create(const fsv_core *srv, ffpars_ctx *ctx, fsv_modinfo *mod
 {
 	int e;
 
-	ffos_init();
+	ffmem_init();
 
 	sslm = ffmem_tcalloc1(fsv_sslm);
 	if (sslm == NULL) {
