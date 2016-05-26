@@ -217,15 +217,10 @@ static void http_readrequest(void *udata)
 		goto fail;
 	}
 
-	r = httpm->lisn->recv(c->conn, ffarr_end(&c->reqhdrbuf), ffarr_unused(&c->reqhdrbuf), NULL, NULL);
-
-	if (r == FSV_IO_EAGAIN) {
-		r = httpm->lisn->recv(c->conn, NULL, 0, &http_readrequest, c);
-
-		if (r == FSV_IO_ASYNC) {
-			http_resettimer(c, TMR_READHDR);
-			return;
-		}
+	r = httpm->lisn->recv(c->conn, ffarr_end(&c->reqhdrbuf), ffarr_unused(&c->reqhdrbuf), &http_readrequest, c);
+	if (r == FSV_IO_ASYNC) {
+		http_resettimer(c, TMR_READHDR);
+		return;
 	}
 
 	http_stoptimer(c, TMR_READHDR);
@@ -580,15 +575,10 @@ static void http_readbody(void *udata)
 	ssize_t r;
 	int f;
 
-	r = httpm->lisn->recv(c->conn, c->reqbodybuf.ptr, c->reqbodybuf.cap, NULL, NULL);
-
-	if (r == FSV_IO_EAGAIN) {
-		r = httpm->lisn->recv(c->conn, NULL, 0, &http_readbody, c);
-
-		if (r == FSV_IO_ASYNC) {
-			http_resettimer(c, TMR_READBODY);
-			return;
-		}
+	r = httpm->lisn->recv(c->conn, c->reqbodybuf.ptr, c->reqbodybuf.cap, &http_readbody, c);
+	if (r == FSV_IO_ASYNC) {
+		http_resettimer(c, TMR_READBODY);
+		return;
 	}
 
 	http_stoptimer(c, TMR_READBODY);
@@ -639,33 +629,19 @@ fail:
 static void http_hangupwatch(void *udata)
 {
 	httpcon *c = udata;
-	ssize_t r = 0;
-
-	if (c->hupwatch) {
-		c->hupwatch = 0;
-		r = httpm->lisn->recv(c->conn, NULL, 0, NULL, NULL);
+	ssize_t r = httpm->lisn->recv(c->conn, (void*)-1, 0, &http_hangupwatch, c);
+	if (r == FSV_IO_ASYNC) {
+		dbglog(c->logctx, FSV_LOG_DBGNET, "hangup watch: started");
+		return;
+	} else if (r == FSV_IO_ERR) {
+		syserrlog(c->logctx, FSV_LOG_ERR, "%s", "hangup watch");
+		http_close(c);
+		return;
+	}
 
 #ifdef FF_WIN
-		if (r == 0) {
-			dbglog(c->logctx, FSV_LOG_DBGNET, "hangup watch: data pending");
-			return;
-		}
+	dbglog(c->logctx, FSV_LOG_DBGNET, "hangup watch: data pending");
 #endif
-	}
-
-	if (r == 0 || r == FSV_IO_EAGAIN) {
-		r = httpm->lisn->recv(c->conn, NULL, 0, &http_hangupwatch, c);
-
-		if (r == FSV_IO_ASYNC) {
-			c->hupwatch = 1;
-			dbglog(c->logctx, FSV_LOG_DBGNET, "hangup watch: started");
-			return;
-		}
-	}
-
-	// if (r == FSV_IO_ERR)
-	syserrlog(c->logctx, FSV_LOG_ERR, "%s", "hangup watch");
-	http_close(c);
 }
 
 /** Pass request body to the filters in response chain.
@@ -1148,15 +1124,10 @@ static void http_sendresponse(void *udata)
 	ssize_t r;
 
 	for (;;) {
-		r = httpm->lisn->sendfile(c->conn, sf, NULL, NULL);
-
-		if (r == FSV_IO_EAGAIN) {
-			r = httpm->lisn->sendfile(c->conn, sf, &http_sendresponse, c);
-
-			if (r == FSV_IO_ASYNC) {
-				http_resettimer(c, TMR_WRITE);
-				return;
-			}
+		r = httpm->lisn->sendfile(c->conn, sf, &http_sendresponse, c);
+		if (r == FSV_IO_ASYNC) {
+			http_resettimer(c, TMR_WRITE);
+			return;
 		}
 
 		http_stoptimer(c, TMR_WRITE);

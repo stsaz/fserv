@@ -179,7 +179,7 @@ struct httpcon {
 		, body_fin :1
 		, body_ready :1
 		, body_skip :1
-		, hupwatch :1;
+		;
 };
 
 

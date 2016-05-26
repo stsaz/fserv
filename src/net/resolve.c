@@ -654,17 +654,10 @@ static void resv_read_data(void *udata)
 	ffstr resp;
 
 	for (;;) {
-		r = ffaio_result(&serv->aiotask);
-
-		if (r == 0)
-			r = ffskt_recv(serv->sk, serv->ansbuf, resvm->buf_size, 0);
-
-		if (r == -1 && fferr_again(fferr_last())) {
-			if (FFAIO_ASYNC == ffaio_recv(&serv->aiotask, &resv_read_data, serv->ansbuf, resvm->buf_size))
-				return;
-		}
-
-		if (r == -1) {
+		r = ffaio_recv(&serv->aiotask, &resv_read_data, serv->ansbuf, resvm->buf_size);
+		if (r == FFAIO_ASYNC)
+			return;
+		else if (r == FFAIO_ERROR) {
 			syserrlog_srv(serv, FSV_LOG_ERR, "%e", FFERR_READ);
 			return;
 		}
@@ -1098,6 +1091,7 @@ static int dns_serv_init(dns_serv *serv)
 	ffaio_init(&serv->aiotask);
 	serv->aiotask.udata = serv;
 	serv->aiotask.sk = sk;
+	serv->aiotask.udp = 1;
 	if (0 != ffaio_attach(&serv->aiotask, resvm->kq, FFKQU_READ)) {
 		er = FFERR_KQUATT;
 		goto fail;

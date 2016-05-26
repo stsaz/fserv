@@ -613,14 +613,10 @@ static void htpx_sendrequest(void *udata)
 
 	for (;;) {
 
-		r = c->px->conn->sendfile(c->serv_id, c->sf, NULL, NULL);
-
-		if (r == FSV_IO_EAGAIN) {
-			r = c->px->conn->sendfile(c->serv_id, c->sf, &htpx_sendrequest, c);
-			if (r == FSV_IO_ASYNC) {
-				htpx_resettimer(c, HTPX_TMR_WRITE);
-				return;
-			}
+		r = c->px->conn->sendfile(c->serv_id, c->sf, &htpx_sendrequest, c);
+		if (r == FSV_IO_ASYNC) {
+			htpx_resettimer(c, HTPX_TMR_WRITE);
+			return;
 		}
 
 		htpx_stoptimer(c, HTPX_TMR_WRITE);
@@ -700,13 +696,10 @@ void htpx_readresponse(void *udata)
 	}
 	ffstr_set(&buf, ffarr_end(&c->hdr), ffarr_unused(&c->hdr));
 
-	r = c->px->conn->recv(c->serv_id, buf.ptr, buf.len, NULL, NULL);
-	if (r == FSV_IO_EAGAIN) {
-		r = c->px->conn->recv(c->serv_id, NULL, 0, &htpx_readresponse, c);
-		if (r == FSV_IO_ASYNC) {
-			htpx_resettimer(c, HTPX_TMR_READ);
-			return;
-		}
+	r = c->px->conn->recv(c->serv_id, buf.ptr, buf.len, &htpx_readresponse, c);
+	if (r == FSV_IO_ASYNC) {
+		htpx_resettimer(c, HTPX_TMR_READ);
+		return;
 	}
 
 	htpx_stoptimer(c, HTPX_TMR_READ);
@@ -890,13 +883,10 @@ static void htpx_readbody(void *udata)
 	ffstr_set(&buf, ffarr_end(&c->body), ffarr_unused(&c->body));
 	FF_ASSERT(buf.len != 0);
 
-	r = c->px->conn->recv(c->serv_id, buf.ptr, buf.len, NULL, NULL);
-	if (r == FSV_IO_EAGAIN) {
-		r = c->px->conn->recv(c->serv_id, NULL, 0, &htpx_readbody, c);
-		if (r == FSV_IO_ASYNC) {
-			htpx_resettimer(c, HTPX_TMR_READ);
-			return;
-		}
+	r = c->px->conn->recv(c->serv_id, buf.ptr, buf.len, &htpx_readbody, c);
+	if (r == FSV_IO_ASYNC) {
+		htpx_resettimer(c, HTPX_TMR_READ);
+		return;
 	}
 
 	htpx_stoptimer(c, HTPX_TMR_READ);
@@ -1249,8 +1239,10 @@ static void htpx_readdata(void *udata)
 	ffstr_set(&buf, ffarr_end(&c->body), ffarr_unused(&c->body));
 	FF_ASSERT(buf.len != 0);
 
-	r = c->px->conn->recv(c->serv_id, buf.ptr, buf.len, NULL, NULL);
-	if (r == FSV_IO_EAGAIN) {
+	r = c->px->conn->recv(c->serv_id, buf.ptr, buf.len, &htpx_readdata, c);
+	if (r == FSV_IO_ASYNC) {
+
+		htpx_resettimer(c, HTPX_TMR_READ);
 
 		if (c->clientresp->code == 0) {
 			// send headers to client
@@ -1259,11 +1251,7 @@ static void htpx_readdata(void *udata)
 			goto done;
 		}
 
-		r = c->px->conn->recv(c->serv_id, NULL, 0, &htpx_readdata, c);
-		if (r == FSV_IO_ASYNC) {
-			htpx_resettimer(c, HTPX_TMR_READ);
-			return;
-		}
+		return;
 	}
 
 	htpx_stoptimer(c, HTPX_TMR_READ);
