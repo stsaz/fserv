@@ -1,10 +1,11 @@
-# fserv v0.24 makefile
+# fserv v0.26 makefile
 
 OS = linux
 
-FSV_BIN = fserv
-FSV_SRCDIR = ../src
-RUNDIR := ../fserv
+BIN := fserv-bin
+PROJDIR := ..
+FSV_SRCDIR := $(PROJDIR)/src
+RUNDIR := ./fserv-0
 VER =
 
 FFOS = ../../ffos
@@ -26,15 +27,16 @@ endif
 ifeq ($(OSTYPE),unix)
 
 TARGET := amd64
-override CFLAGS += -fpic -DFF_OLDLIBC
+override ALL_CFLAGS += -fpic
 override LDFLAGS += -lrt
 SO := so
 PACK_EXT := tar.xz
 
 ifeq ($(OS),linux)
 
+override ALL_CFLAGS += -DFF_OLDLIBC
 LD_LDL := -ldl
-CP := cp -u -v -p
+CP := cp -u -v --no-preserve=mode,ownership
 PACK := tar --owner=0 --group=0 --numeric-owner -cJv -f
 
 else #bsd:
@@ -47,7 +49,7 @@ endif
 else #windows:
 
 TARGET := x64
-LDFLAGS := -lws2_32 -L$(FF)/3pt/win-x64
+LDFLAGS := -lws2_32
 SO := dll
 CP := cp -u -v -p
 PACK := zip -9 -r -v
@@ -55,17 +57,23 @@ PACK_EXT := zip
 
 endif
 
+FF3PTLIB := $(FF)-3pt/$(OS)-$(TARGET)
+
 
 C = gcc
 LD = gcc
 OPT = -O2
 # -D_DEBUG
 
-override CFLAGS += -c $(OPT) -g -Wall -Werror -pthread \
-	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) -I$(FF)/3pt \
-	-ffunction-sections -fdata-sections  -fvisibility=hidden -fno-exceptions
+override CFLAGS += $(ALL_CFLAGS) -c $(OPT) -g -Wall -Werror -pthread \
+	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) -I$(FF)-3pt \
+	-ffunction-sections -fdata-sections  -fvisibility=hidden
+
+override FF_CFLAGS += $(ALL_CFLAGS) $(OPT) -g \
+	-ffunction-sections -fdata-sections  -fvisibility=hidden
 
 override LDFLAGS += -pthread \
+	-L$(FF3PTLIB) \
 	-fvisibility=hidden \
 	-Wl,-gc-sections
 
@@ -79,27 +87,17 @@ SSL_LIBS := -lssleay32 -leay32
 ZLIB := -lzlib1
 endif
 
-include ./makerules
+include $(PROJDIR)/build/makerules
 
-strip-debug: all
-	sh strip-debug.sh $(FSV_BIN) $(MOD_ALL)
 
-install: all preinstall
-ifeq ($(OSTYPE),unix)
-	$(CP) fserv-exec-unix $(RUNDIR)/sbin/fserv
-	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/$(FSV_BIN)-bin
+%.debug: %
+	objcopy --only-keep-debug $< $@
+	strip $<
+	objcopy --add-gnu-debuglink=$@ $<
+	touch $@
 
-	chmod 755 $(RUNDIR)/sbin/fserv $(RUNDIR)/sbin/$(FSV_BIN)-bin
-	chmod 644 $(RUNDIR)/mod/*.$(SO)
 
-else #windows:
-	$(CP) fserv-exec-win.cmd $(RUNDIR)/sbin/fserv.cmd
-	$(CP) $(FSV_BIN) $(RUNDIR)/sbin/fserv-bin.exe
-	$(CP) ./*_fserv.cmd $(RUNDIR)/
-
-endif
-
-package: all install
-	cd .. \
-		&&  rm -f fserv-$(VER)-$(OS)-$(TARGET).$(PACK_EXT) \
-		&&  $(PACK) fserv-$(VER)-$(OS)-$(TARGET).$(PACK_EXT) ./fserv
+package: install
+	rm -f fserv-$(VER)-$(OS)-$(TARGET).$(PACK_EXT) \
+		&&  $(PACK) fserv-$(VER)-$(OS)-$(TARGET).$(PACK_EXT) $(RUNDIR)
+	$(PACK) fserv-$(VER)-$(OS)-$(TARGET)-debug.$(PACK_EXT) ./*.debug

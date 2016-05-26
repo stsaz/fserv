@@ -1,9 +1,9 @@
 
 OBJ_DIR = .
-MOD_ALL = log.$(SO) cache.$(SO) net.$(SO) http.$(SO) http-proxy.$(SO) ssl.$(SO)
+BINS = $(BIN) log.$(SO) cache.$(SO) net.$(SO) http.$(SO) http-proxy.$(SO) ssl.$(SO)
 FSERV_H = $(FSV_SRCDIR)/core/fserv.h
 
-all: ff $(FSV_BIN) $(MOD_ALL)
+all: ff $(BINS)
 
 include $(FF)/makerules
 FF_ALL_OBJS := $(FFOS_OBJ) $(FF_OBJ)
@@ -15,7 +15,7 @@ FSV_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(SOURCES
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/core/%.c $(FSERV_H)
 	$(C)  $(CFLAGS) $<  -o$@
 BIN_O := $(FSV_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ)
-$(FSV_BIN): $(BIN_O)
+$(BIN): $(BIN_O)
 	$(LD)  $(BIN_O) $(LDFLAGS) $(LD_LDL)  -o$@
 
 
@@ -83,12 +83,15 @@ test.$(SO): $(TEST_O)
 	$(LD)  -shared $(TEST_O) $(LDFLAGS)  -o$@
 
 
-test: test.$(SO) install
+test: test.$(SO) installd
 	$(CP) $(FSV_SRCDIR)/test/*.conf  $(RUNDIR)/conf
 	$(CP) $(FSV_SRCDIR)/test/*.crt $(FSV_SRCDIR)/test/*.key $(FSV_SRCDIR)/test/*.pem  $(RUNDIR)
 
 
-preinstall: all
+strip: all $(BINS:.$(SO)=.$(SO).debug) $(BIN).debug $(BINS:.exe=.exe.debug)
+
+
+installd: all
 	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin \
 		$(RUNDIR)/cache $(RUNDIR)/www
 	$(CP) $(FSV_SRCDIR)/../conf/* $(RUNDIR)/conf/
@@ -102,9 +105,30 @@ preinstall: all
 
 	$(CP) $(FSV_SRCDIR)/http-proxy/fwdproxy.conf $(FSV_SRCDIR)/http-proxy/revproxy.conf $(RUNDIR)/conf/
 
+ifeq ($(OSTYPE),unix)
+	$(CP) $(PROJDIR)/build/fserv-exec-unix $(RUNDIR)/sbin/fserv
+	$(CP) $(BIN) $(RUNDIR)/sbin/
+	$(CP) $(FF3PTLIB)/libz.so $(FF3PTLIB)/libcrypto.so $(FF3PTLIB)/libssl.so \
+		$(RUNDIR)/mod/
+
+	chmod 755 $(RUNDIR)/sbin/fserv $(RUNDIR)/sbin/$(BIN) $(RUNDIR)/mod/*.$(SO)
+
+else #windows:
+	$(CP) $(PROJDIR)/build/fserv-exec-win.cmd $(RUNDIR)/sbin/fserv.cmd
+	$(CP) $(BIN) $(RUNDIR)/sbin/fserv-bin.exe
+	$(CP) $(PROJDIR)/build/*_fserv.cmd $(RUNDIR)/
+	$(CP) $(FF3PTLIB)/zlib1.dll $(FF3PTLIB)/ssleay32.dll $(FF3PTLIB)/libeay32.dll \
+		$(RUNDIR)/mod/
+
+endif
+
+
+install: all strip installd
+
+
 clean:
 	rm -vf \
-		$(FSV_BIN) $(MOD_ALL) test.$(SO) \
+		$(BINS) test.$(SO) \
 		*.debug *.o
 
 distclean: clean ffclean

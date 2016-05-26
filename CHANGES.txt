@@ -1,3 +1,24 @@
+-----------------
+HISTORY OF FSERV
+-----------------
+
+ "+" - new feature
+ "*" - change, update or a small improvement
+ "-" - bugfix
+
+
+fserv v0.26 - May 26, 2016
+
+ * core: "root" config setting is optional
+ * core: print dl error messages
+ - core: windows: "-s reconfig" didn't work (v0.24 bug)
+ * fcache: fix debug logging
+ - net.listen: "listen" config setting didn't work with IPv6 address
+ - broadcast mp3: fix segfault if large buffer is used
+ - broadcast mp3: fix ID3v2 parsing
+ - broadcast proxy: fix segfault if file storing wasn't enabled
+
+
 fserv v0.25 - Oct 5, 2015
 
  * http, http-proxy: max_header_size is 8k by default

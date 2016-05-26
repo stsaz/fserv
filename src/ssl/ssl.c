@@ -611,6 +611,10 @@ static int ssl_handshake(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len)
 	return 0;
 }
 
+/**
+1. (sslbuf_len == -1).  Set sslbuf and sslbuf_len.  Return I/O operation.
+2. (sslbuf_len != -1).  Process received data.  Return the number of decoded bytes received.
+*/
 static ssize_t ssl_recv(fsv_sslcon *c, void *buf, size_t size, void **sslbuf, ssize_t *sslbuf_len)
 {
 	int r;
