@@ -594,7 +594,7 @@ static int fcach_fetch(fsv_cachectx *_cx, fsv_fcacheitem *ca, int flags)
 
 done:
 	dbglog(logctx, "fetch: \"%*s\"; age: %us; data size: %U; filename: %S"
-		, c->h->keylen, c->h->key, fcachm->core->fsv_gettime().s - c->h->creat_tm, c->size, &fn);
+		, (size_t)c->h->keylen, c->h->key, fcachm->core->fsv_gettime().s - c->h->creat_tm, c->size, &fn);
 
 	fcach_fill(c, ca);
 	ffstr_free(&fn);
@@ -700,7 +700,7 @@ static int fcach_store(fsv_cachectx *_cx, fsv_fcacheitem *ca, int flags)
 		c->locked = 1;
 
 	dbglog(logctx, "store: \"%*s\"; max-age: %ds; data size: %U; filename: %S"
-		, c->h->keylen, c->h->key, c->h->expire_tm - fcachm->core->fsv_gettime().s, ca->len, &fn);
+		, (size_t)c->h->keylen, c->h->key, c->h->expire_tm - fcachm->core->fsv_gettime().s, ca->len, &fn);
 	ffstr_free(&fn);
 
 	if (cx->bufsize != 0 && NULL == ffarr_alloc(&c->buf, cx->bufsize)) {
@@ -763,7 +763,7 @@ static int fcach_update(fsv_fcacheitem *ca, int flags)
 			c->locked = 0;
 
 		dbglog(logctx, "update: \"%*s\"; data size: %U"
-			, c->h->keylen, c->h->key, c->size + ca->len);
+			, (size_t)c->h->keylen, c->h->key, c->size + ca->len);
 
 		if (0 != fcach_write(c, ca->data, ca->len, logctx, (flags & FSV_FCACH_UNLOCK) ? 1 : 0)) {
 			esys = FFERR_WRITE;
@@ -776,7 +776,7 @@ static int fcach_update(fsv_fcacheitem *ca, int flags)
 		fcach_setexpire(c, ca->expire);
 
 	dbglog(logctx, "update: \"%*s\"; data size: %U"
-		, c->h->keylen, c->h->key, c->size);
+		, (size_t)c->h->keylen, c->h->key, c->size);
 
 	fcach_fill(c, ca);
 	return FSV_CACH_OK;
@@ -806,7 +806,7 @@ static int fcach_unref(fsv_fcacheitem *ca, int flags)
 		&& 0 == fcach_mem_unref(c, (flags & FSV_FCACH_UNLINK) ? FSV_CACH_UNLINK : 0, logctx))
 		return FSV_CACH_OK;
 
-	dbglog(logctx, "unref: \"%*s\"", c->h->keylen, c->h->key);
+	dbglog(logctx, "unref: \"%*s\"", (size_t)c->h->keylen, c->h->key);
 
 	fcach_free(c);
 	return FSV_CACH_OK;
