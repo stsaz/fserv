@@ -386,14 +386,14 @@ static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod)
 
 	dl = ffdl_open(fn, 0);
 	if (dl == NULL) {
-		srv_errsave(-1, "open module file: %s", fn);
+		srv_errsave(-1, "open module file: %s: %s", fn, ffdl_errstr());
 		return FFPARS_ESYS;
 	}
 
 	*getmod = (fsv_getmod_t)ffdl_addr(dl, "fsv_getmod");
 	if (*getmod == NULL) {
+		srv_errsave(-1, "resolve function: fsv_getmod: %s", ffdl_errstr());
 		ffdl_close(dl);
-		srv_errsave(-1, "resolve function: fsv_getmod");
 		return FFPARS_ESYS;
 	}
 
