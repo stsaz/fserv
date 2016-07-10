@@ -321,8 +321,6 @@ serve:
 	}
 
 fin:
-	if (conf != opts.conf_fn.ptr)
-		ffmem_free(conf);
 	if (fsv != NULL)
 		fsv->destroy();
 	return ret;
