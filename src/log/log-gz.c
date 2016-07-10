@@ -3,11 +3,11 @@ Copyright (c) 2014 Simon Zolin
 */
 
 #include "log.h"
-#include <FF/gz.h>
+#include <FF/data/gz.h>
 
 
 typedef struct loggzip {
-	fflz gz;
+	ffgz_cook gz;
 	fffd fd;
 	ffstr3 buf;
 
@@ -15,8 +15,7 @@ typedef struct loggzip {
 	ffstr fn;
 	uint bufsize;
 	byte gzlev;
-	byte gzmemlev;
-	byte gzwbits;
+	byte gzmem;
 } loggzip;
 
 
@@ -49,19 +48,7 @@ static const ffpars_arg logz_conf_args[] = {
 
 static int logz_conf_gzipbufsize(ffparser_schem *ps, loggzip *lz, const int64 *n)
 {
-	int half = (int)*n / 2;
-	int i;
-
-	i = fflz_wbits(half);
-	if (i == -1)
-		return FFPARS_EBADVAL;
-	lz->gzwbits = i;
-
-	i = fflz_memlevel(half);
-	if (i == -1)
-		return FFPARS_EBADVAL;
-	lz->gzmemlev = i;
-
+	lz->gzmem = *n / 1024;
 	return 0;
 }
 
@@ -87,8 +74,7 @@ static fsv_log_outptr * logz_create(ffpars_ctx *a)
 		return NULL;
 
 	lz->gzlev = 6;
-	lz->gzwbits = fflz_wbits(0);
-	lz->gzmemlev = fflz_memlevel(0);
+	lz->gzmem = 4;
 	lz->fd = FF_BADFD;
 	lz->bufsize = 4 * 1024;
 
@@ -173,42 +159,60 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 {
 	int rc = 1;
 	int r;
-	char buf[16 * 1024];
-	fflz *gz = &lz->gz;
+	ffstr sbuf = {0};
+	ffgz_cook *gz = &lz->gz;
+	enum { GZCAP = 16 * 1024 };
 
-	if (0 != fflz_deflateinit(gz, lz->gzlev, lz->gzwbits + 16, lz->gzmemlev)) {
-		logm_err("init deflate: %S: %s", &lz->fn, fflz_errstr(gz));
-		return 1;
+	if (NULL == ffstr_alloc(&sbuf, GZCAP))
+		goto end;
+
+	if (0 != ffgz_winit(gz, lz->gzlev, lz->gzmem)
+		|| 0 != ffgz_wfile(gz, NULL, 0)) {
+		logm_err("init deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
+		goto end;
 	}
-	fflz_setin(gz, d, len);
+
+	ffgz_wfinish(gz);
+	ffstr_set(&gz->in, d, len);
 
 	for (;;) {
-		fflz_setout(gz, buf, FFCNT(buf));
+		r = ffgz_write(gz, sbuf.ptr + sbuf.len, GZCAP - sbuf.len);
+		switch (r) {
+		case FFGZ_DONE:
+			break;
 
-		r = fflz_deflate(gz, Z_FINISH, NULL, &len);
-		if (r != Z_OK && r != Z_STREAM_END) {
-			logm_err("deflate: %S: %s", &lz->fn, fflz_errstr(gz));
+		case FFGZ_DATA: {
+			size_t n = ffstr_cat(&sbuf, GZCAP, gz->out.ptr, gz->out.len);
+			ffstr_shift(&gz->out, n);
+			sbuf.len += n;
+			if (sbuf.len != GZCAP)
+				continue;
+			break;
+		}
+
+		default:
+			logm_err("deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
 			goto end;
 		}
 
-		if (len != fffile_write(lz->fd, buf, len)) {
+		if (len != fffile_write(lz->fd, sbuf.ptr, sbuf.len)) {
 			logm_errsys("%e: %S", FFERR_WRITE, &lz->fn);
 			goto end;
 		}
-
+		sbuf.len = 0;
 #if 0
 		fffile_fmt(ffstdout, NULL, "written %L bytes into file %S\n"
 			, (size_t)len, &lz->fn);
 #endif
 
-		if (r == Z_STREAM_END)
+		if (r == FFGZ_DONE)
 			break;
 	}
 
 	rc = 0;
 
 end:
-	if (0 != fflz_deflatefin(gz))
-		logm_err("fin deflate: %S: %s", &lz->fn, fflz_errstr(gz));
+	ffstr_free(&sbuf);
+	ffgz_wclose(gz);
 	return rc;
 }
