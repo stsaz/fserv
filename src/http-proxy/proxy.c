@@ -278,7 +278,7 @@ static int htpx_htdenyurls_init(htpxctx *px)
 	px->htdenyurls.cmpkey = &htpx_htdenyurls_cmpkey;
 
 	while (NULL != (bs = ffbstr_next(px->denyurls.ptr, px->denyurls.len, &off, NULL))) {
-		hash = ffcrc32_get(bs->data, bs->len, 0);
+		hash = ffcrc32_get(bs->data, bs->len);
 		if (ffhst_ins(&px->htdenyurls, hash, bs) < 0)
 			return 1;
 	}
@@ -471,7 +471,7 @@ static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *lo
 	if ('.' == ffarr_back(&host))
 		host.len--; //remove the trailing dot in case the host is "host.com."
 
-	hash = ffcrc32_get(host.ptr, host.len, 0);
+	hash = ffcrc32_get(host.ptr, host.len);
 	if (NULL != ffhst_find(&px->htdenyurls, hash, host.ptr, host.len, NULL))
 		goto denied;
 

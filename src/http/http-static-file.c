@@ -100,6 +100,9 @@ static void stfl_fin(stfl_obj *o, fsv_logctx *logctx);
 static int stfl_htmime_cmpkey(void *udata, const char *key, size_t keylen, void *param);
 
 
+#define CRC32(p, len) \
+	((FFPATH_ICASE) ? ffcrc32_iget(p, len) : ffcrc32_get(p, len))
+
 #define STFL_MODNAME "STFL"
 
 #define syserrlog(logctx, lev, fmt, ...) \
@@ -196,7 +199,7 @@ static int stfl_htmime_init(void)
 	for (i = 0;  i != stflm->mime_exts.len;  i++) {
 
 		len = ffsz_len(me->ext);
-		hash = ffcrc32_get(me->ext, len, (FFPATH_ICASE) ? FFCRC_ICASE : 0);
+		hash = CRC32(me->ext, len);
 		if (ffhst_ins(&stflm->htmime, hash, me) < 0)
 			return 1;
 		me = (mime_ext_t*)((byte*)me + sizeof(mime_ext_t) + len + 1);
@@ -358,7 +361,7 @@ static int stfl_htmime_cmpkey(void *udata, const char *key, size_t keylen, void 
 
 static const char* stfl_findmime(const ffstr *ext)
 {
-	uint hash = ffcrc32_get(ext->ptr, ext->len, (FFPATH_ICASE) ? FFCRC_ICASE : 0);
+	uint hash = CRC32(ext->ptr, ext->len);
 	const mime_ext_t *m = ffhst_find(&stflm->htmime, hash, ext->ptr, ext->len, NULL);
 	if (m == NULL)
 		return NULL;

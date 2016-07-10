@@ -118,7 +118,7 @@ static void cach_fillitem(fsv_cacheitem *ca, cach_item *cit);
 #define KEYHASH_EMPTY(hash)  ((hash)[0] == 0)
 
 #define KEYHASH_SET(hash, key, len, key_icase) \
-	*(hash) = ffcrc32_get(key, len, key_icase)
+	(*(hash) = (key_icase) ? ffcrc32_iget(key, len) : ffcrc32_get(key, len))
 
 static cach_key * cach_key_alloc(const char *key, size_t len, int key_icase);
 static ffbool cach_key_equal(const cach_key *ckey, const char *key, size_t len, int key_icase);

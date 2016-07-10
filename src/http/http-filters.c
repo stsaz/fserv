@@ -465,7 +465,7 @@ static httptarget* http_findroute(httpcon *c)
 	char *slash;
 
 	for (;;) {
-		hash = ffcrc32_get(path.ptr, path.len, FFCRC_ICASE);
+		hash = ffcrc32_iget(path.ptr, path.len);
 		tgt = ffhst_find(&c->host->hstroute, hash, path.ptr, path.len, NULL);
 		if (tgt != NULL) {
 

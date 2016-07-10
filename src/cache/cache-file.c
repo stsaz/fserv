@@ -139,7 +139,7 @@ static FFINL void fcach_setexpire(fcache *c, uint expire) {
 #define KEYHASH_EMPTY(hash)  ((hash)[0] == 0)
 
 #define KEYHASH_SET(hash, key, len, key_icase) \
-	*(hash) = ffcrc32_get(key, len, key_icase)
+	*(hash) = ffcrc32_get(key, len)
 
 
 static const ffpars_arg fcachx_conf_args[] = {

@@ -412,7 +412,7 @@ static int hthost_hbn_init(void)
 			ffstr_set(&hbn->name, nm, len);
 			hbn->host = h;
 
-			hash = ffcrc32_get(nm, len, FFCRC_ICASE);
+			hash = ffcrc32_iget(nm, len);
 			if (ffhst_ins(&httpm->ht_hbn, hash, hbn++) < 0)
 				return 1;
 		}
@@ -775,7 +775,7 @@ httphost * http_gethost(fsv_lsncon *conn, const ffstr *name)
 
 	httpm->lisn->getvar(conn, FFSTR("context_ptr"), &curlx, sizeof(void*));
 
-	hs = ffcrc32_get(name->ptr, name->len, FFCRC_ICASE);
+	hs = ffcrc32_iget(name->ptr, name->len);
 	hbn = ffhst_find(&httpm->ht_hbn, hs, name->ptr, name->len, curlx);
 
 	if (hbn == NULL)
@@ -875,7 +875,7 @@ static int hthost_hstroute_init(httphost *h)
 	h->hstroute.cmpkey = &hthost_hstroute_cmpkey;
 
 	FFLIST_WALK(&h->routes, tgt, sib) {
-		uint hash = ffcrc32_get(tgt->path.ptr, tgt->path.len, FFCRC_ICASE);
+		uint hash = ffcrc32_iget(tgt->path.ptr, tgt->path.len);
 		if (ffhst_ins(&h->hstroute, hash, tgt) < 0)
 			return -1;
 	}
@@ -1006,7 +1006,7 @@ static int http_hstvar_init(void)
 
 	for (i = 0;  i < FFCNT(http_vars);  i++) {
 		const ffstr *name = &http_vars[i];
-		uint hash = ffcrc32_get(name->ptr, name->len, 0);
+		uint hash = ffcrc32_get(name->ptr, name->len);
 		if (ffhst_ins(&httpm->hstvars, hash, (void*)(i + 1)) < 0)
 			return -1;
 	}
@@ -1040,7 +1040,7 @@ static ssize_t http_getvar(void *con, const char *name, size_t namelen, void *ds
 {
 	httpcon *c = con;
 	ffstr val;
-	uint hash = ffcrc32_get(name, namelen, 0);
+	uint hash = ffcrc32_get(name, namelen);
 	size_t v = (size_t)ffhst_find(&httpm->hstvars, hash, name, namelen, NULL);
 
 	if (v == 0) {

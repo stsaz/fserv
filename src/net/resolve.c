@@ -386,7 +386,7 @@ static int resv_resolve(fsv_resolv_ctx *rctx, const char *name, size_t namelen, 
 		}
 	}
 
-	namecrc = ffcrc32_get(name, namelen, FFCRC_ICASE);
+	namecrc = ffcrc32_iget(name, namelen);
 
 	// determine whether the needed query is already pending and if so, attach to it
 	found_query = ffrbt_find(&r->queries, namecrc, &parent);
@@ -516,7 +516,7 @@ static int resv_rmuser(resolver *r, const ffstr *host, fsv_resolv_cb ondone, voi
 	dns_quser *quser;
 	uint namecrc;
 
-	namecrc = ffcrc32_get(host->ptr, host->len, FFCRC_ICASE);
+	namecrc = ffcrc32_iget(host->ptr, host->len);
 	found = ffrbt_find(&r->queries, namecrc, NULL);
 	if (found == NULL) {
 		errlogmod(FSV_LOG_ERR, "cancel: no query for %S", host);
@@ -796,7 +796,7 @@ static dns_query * resv_find_query(dns_serv *serv, ffdns_hdr_host *h, const ffst
 		}
 	}
 
-	namecrc = ffcrc32_get(qname, name.len, 0);
+	namecrc = ffcrc32_get(qname, name.len);
 
 	found_query = ffrbt_find(&resvm->queries, namecrc, NULL);
 	if (found_query == NULL) {
