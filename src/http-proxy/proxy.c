@@ -85,6 +85,8 @@ static void htpx_chain_free(htpxcon *c);
 static const char *const filt_type_str[] = { "response", "request" };
 #define FILT_TYPE(t)  filt_type_str[t]
 
+#define HF_SENTL(hf)  ((hf)->reqfilt ? ffchain_sentl(&c->filters) : ffchain_sentl(&c->respfilters))
+
 
 static void oninit(void)
 {
@@ -517,6 +519,8 @@ static void * htpx_newcon(fsv_httphandler *h)
 		goto fin;
 	}
 
+	ffchain_init(&c->filters);
+	ffchain_init(&c->respfilters);
 	c->hf = h->id;
 	c->http = h->httpcon;
 	c->logctx = h->logctx;
@@ -559,8 +563,7 @@ static void htpx_chain_init(htpxcon *c)
 		hf->con = c;
 		hf->sm = sm;
 		hf->reqfilt = 1;
-		if (hf != c->reqchain.ptr)
-			fflist_link(&hf->sib, &(hf-1)->sib);
+		ffchain_add(&c->filters, &hf->sib);
 		hf++;
 	}
 
@@ -580,8 +583,7 @@ static void htpx_chain_init(htpxcon *c)
 		ffsf_init(&hf->input);
 		hf->con = c;
 		hf->sm = sm;
-		if (hf != c->respchain.ptr)
-			fflist_link(&hf->sib, &(hf-1)->sib);
+		ffchain_add(&c->respfilters, &hf->sib);
 		hf++;
 	}
 }
@@ -780,7 +782,7 @@ static int htpx_chain_process(htpxcon *c, htpxfilter **phf, uint flags)
 		r |= FFLIST_CUR_RMFIRST;
 
 	cur = &hf->sib;
-	r = fflist_curshift(&cur, r, fflist_sentl(&cur));
+	r = fflist_curshift(&cur, r, HF_SENTL(hf));
 
 	switch (r) {
 	case FFLIST_CUR_NONEXT:
@@ -814,7 +816,7 @@ static int htpx_chain_process(htpxcon *c, htpxfilter **phf, uint flags)
 			*phf = hf;
 			break;
 		}
-		r = fflist_curshift(&cur, FFLIST_CUR_PREV, fflist_sentl(&cur));
+		r = fflist_curshift(&cur, FFLIST_CUR_PREV, HF_SENTL(hf));
 	}
 	hf->sentdata = 1;
 	return 0;
@@ -838,7 +840,7 @@ void htpx_callmod(htpxcon *c, htpxfilter *hf)
 
 	p.id = (fsv_httpfilter*)hf;
 	p.data = &hf->input;
-	p.flags = (hf->sib.prev == NULL) ? FSV_HTTP_LAST : 0;
+	p.flags = (hf->sib.prev == HF_SENTL(hf)) ? FSV_HTTP_LAST : 0;
 	p.flags |= (hf->flags & (FSV_HTTP_PUSH | FSV_HTTP_ASIS));
 
 	if (hf->sentdata) {

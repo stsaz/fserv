@@ -17,6 +17,8 @@ static void http_fin(httpcon *c);
 static const char *const filt_type_str[] = { "response", "request" };
 #define FILT_TYPE(t)  filt_type_str[t]
 
+#define HF_SENTL(hf)  ((hf)->reqfilt ? ffchain_sentl(&c->filters) : ffchain_sentl(&c->respfilters))
+
 
 void http_start(httpcon *c)
 {
@@ -135,6 +137,7 @@ static void http_chain_error(httpcon *c, httpfilter *hf)
 		c->respchain.len = 0;
 		c->respmain_fin = 0;
 		c->resp_fin = 0;
+		ffchain_init(&c->respfilters);
 
 		{
 		uint code = c->resp.code;
@@ -168,7 +171,7 @@ static int http_mainhandler_process(httpcon *c, httpfilter **phf, uint flags)
 		c->respmain_fin = 1;
 
 		if ((hf->flags & (FSV_HTTP_NOINPUT | FSV_HTTP_DONE | FSV_HTTP_ERROR))
-			&& hf->sib.prev != NULL) {
+			&& hf->sib.prev != HF_SENTL(hf)) {
 
 			fsv_taskpost(httpm->core, &c->rtask, &http_respchain_continue, hf);
 			hf = FF_GETPTR(httpfilter, sib, hf->sib.prev);
@@ -214,7 +217,7 @@ static int http_chain_process(httpcon *c, httpfilter **phf, uint flags)
 		r |= FFLIST_CUR_RMFIRST;
 
 	cur = &hf->sib;
-	r = fflist_curshift(&cur, r, fflist_sentl(&cur));
+	r = fflist_curshift(&cur, r, HF_SENTL(hf));
 
 	switch (r) {
 	case FFLIST_CUR_NONEXT:
@@ -248,7 +251,7 @@ static int http_chain_process(httpcon *c, httpfilter **phf, uint flags)
 			*phf = hf;
 			break;
 		}
-		r = fflist_curshift(&cur, FFLIST_CUR_PREV, fflist_sentl(&cur));
+		r = fflist_curshift(&cur, FFLIST_CUR_PREV, HF_SENTL(hf));
 	}
 	hf->sentdata = 1;
 	return 0;
@@ -280,7 +283,7 @@ static void http_callmod(httpcon *c, httpfilter *hf)
 
 	p.id = (fsv_httpfilter*)hf;
 	p.data = &hf->input;
-	p.flags = (hf->sib.prev == NULL) ? FSV_HTTP_LAST : 0;
+	p.flags = (hf->sib.prev == HF_SENTL(hf)) ? FSV_HTTP_LAST : 0;
 	p.flags |= (hf->flags & (FSV_HTTP_PUSH | FSV_HTTP_ASIS));
 
 	if (hf->fin)
@@ -347,8 +350,7 @@ static int http_init_reqchain(httpcon *c)
 	for (i = 0;  i != n;  i++) {
 		http_initfilter(c, hf, &reqfilts[i]);
 		hf->reqfilt = 1;
-		if (hf != c->reqchain.ptr)
-			fflist_link(&hf->sib, &(hf-1)->sib);
+		ffchain_add(&c->filters, &hf->sib);
 		hf++;
 	}
 	return 0;
@@ -372,22 +374,23 @@ int http_init_respchain(httpcon *c, const http_submod *mainhandler)
 	hf = c->respchain.ptr;
 
 	http_initfilter(c, hf, &respfilts[0]);
+	ffchain_add(&c->respfilters, &hf->sib);
 	hf++;
 
 	http_initfilter(c, hf, mainhandler);
+	ffchain_add(&c->respfilters, &hf->sib);
 	hf->ismain = 1;
-	fflist_link(&hf->sib, &(hf-1)->sib);
 	hf++;
 
 	FFARR_WALK(&c->host->resp_filters, sm) {
 		http_initfilter(c, hf, sm);
-		fflist_link(&hf->sib, &(hf-1)->sib);
+		ffchain_add(&c->respfilters, &hf->sib);
 		hf++;
 	}
 
 	for (i = 1;  i != nfilts;  i++) {
 		http_initfilter(c, hf, &respfilts[i]);
-		fflist_link(&hf->sib, &(hf-1)->sib);
+		ffchain_add(&c->respfilters, &hf->sib);
 		hf++;
 	}
 	return 0;

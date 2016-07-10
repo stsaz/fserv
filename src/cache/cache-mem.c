@@ -618,7 +618,7 @@ static int cach_store(fsv_cachectx *fcx, fsv_cacheitem *ca, int flags)
 		cach_key_ref(fcit->ckey);
 		cit->ckey = fcit->ckey;
 
-		fflist_link(&cit->rbtnod.sib, fcit->rbtnod.sib.prev); //'prev' points to the last item in chain
+		ffchain_append(&cit->rbtnod.sib, fcit->rbtnod.sib.prev); //'prev' points to the last item in chain
 		cx->items.len++;
 	}
 

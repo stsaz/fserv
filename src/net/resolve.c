@@ -1120,7 +1120,7 @@ static void dns_serv_fin(dns_serv *serv)
 static dns_serv * resv_nextserv(resolver *r)
 {
 	dns_serv *serv = r->curserv;
-	fflist_item *next = ((serv->sib.next != NULL) ? serv->sib.next : r->servs.first);
+	fflist_item *next = ((serv->sib.next != fflist_sentl(&r->servs)) ? serv->sib.next : r->servs.first);
 	r->curserv = FF_GETPTR(dns_serv, sib, next);
 	return serv;
 }

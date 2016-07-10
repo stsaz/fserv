@@ -1245,7 +1245,7 @@ static void conx_serv_mark_down(fsv_conctx *cx, conn_serv *cs)
 
 static FFINL conn_serv * conx_nextserv(fsv_conctx *cx, conn_serv *cs)
 {
-	fflist_item *next = ((cs->sib.next != NULL) ? cs->sib.next : cx->upstm.first);
+	fflist_item *next = ((cs->sib.next != fflist_sentl(&cx->upstm)) ? cs->sib.next : cx->upstm.first);
 	return FF_GETPTR(conn_serv, sib, next);
 }
 

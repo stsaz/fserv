@@ -791,6 +791,8 @@ void http_setlog(httpcon *c, fsv_logctx *logctx)
 
 static void http_prepare(httpcon *c)
 {
+	ffchain_init(&c->filters);
+	ffchain_init(&c->respfilters);
 	c->host = c->defhost;
 	http_setlog(c, c->defhost->logctx);
 	c->logctx = (fsv_logctx*)&c->lctx;

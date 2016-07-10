@@ -115,6 +115,9 @@ struct htpxcon {
 	ffstr serv_url //upstream server URL
 		, serv_host;
 
+	ffchain filters;
+	ffchain respfilters;
+
 	//request:
 	ffstr req_hdrs;
 	uint nreqline; //length of request line

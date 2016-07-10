@@ -141,6 +141,9 @@ struct httpcon {
 	uint tmr_when;
 	uint tmr_flags;
 
+	ffchain filters;
+	ffchain respfilters;
+
 	//request:
 	httphost *host;
 	httptarget *tgt;
