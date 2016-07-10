@@ -1,1 +1,1 @@
-sbin\fserv.cmd -s reconfig
+fserv.cmd -s reconfig

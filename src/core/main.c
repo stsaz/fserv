@@ -86,7 +86,7 @@ N
 "Options:" N
 "  -h, --help       show this help" N
 "  -v, --version    show version" N
-"  -c, --conf=FILE  set configuration file (=../conf/fserv.conf)" N
+"  -c, --conf=FILE  set configuration file (=conf/fserv.conf)" N
 "  -d, --daemon     run in background" N
 "  -s, --sig=CMD    send signal:" N
 "      stop         stop the server" N
@@ -118,7 +118,6 @@ static int setroot(const fsv_main *fsv, const char *argv0)
 		return -1;
 	}
 	ffpath_split2(fn, strlen(fn), &path, NULL);
-	ffpath_split2(path.ptr, path.len, &path, NULL);
 
 	return fsv->setroot(path.ptr, path.len);
 }

@@ -8,10 +8,11 @@ MODULES
 ---------------
 Default modules:
 	. log.so: log
-	. cache.so: mem
+	. cache.so: mem, file
 	. net.so: connect, listen, resolve
 	. http.so: http, static-file, dir-index, errdoc, gzip, status
 	. http-proxy.so: proxy
+	. ssl.so: ssl
 External modules are loaded from mod/ directory.
 
 ---------------

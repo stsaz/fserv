@@ -1,1 +1,1 @@
-sbin\fserv.cmd -d
+fserv.cmd -d

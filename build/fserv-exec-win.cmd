@@ -1,4 +1,4 @@
 @setlocal
-@set PATH=%PATH%;%~dp0..\mod
+@set PATH=%~dp0mod;%PATH%
 
 %~dp0fserv-bin.exe %*

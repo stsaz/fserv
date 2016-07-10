@@ -6,6 +6,7 @@ FSERV_H = $(FSV_SRCDIR)/core/fserv.h
 all: ff $(BINS)
 
 include $(FF)/makerules
+include $(FF3PT)/makerules
 FF_ALL_OBJS := $(FFOS_OBJ) $(FF_OBJ)
 FF_HTTP_OBJ := $(FF_OBJ_DIR)/ffhttp.o $(FF_OBJ_DIR)/ffurl.o
 
@@ -14,25 +15,37 @@ SOURCES = $(wildcard $(FSV_SRCDIR)/core/*.c)
 FSV_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(SOURCES)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/core/%.c $(FSERV_H)
 	$(C)  $(CFLAGS) $<  -o$@
-BIN_O := $(FSV_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ)
+BIN_O := $(FSV_OBJ) $(FF_ALL_OBJS) \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffpsarg.o \
+	$(FF_OBJ_DIR)/ffconf.o \
+	$(FF_OBJ_DIR)/ffparse.o
 $(BIN): $(BIN_O)
-	$(LD)  $(BIN_O) $(LDFLAGS) $(LD_LDL)  -o$@
+	$(LD)  $(BIN_O) $(LDFLAGS) $(LD_LDL) $(LD_LPTHREAD)  -o$@
 
 
 MOD_LOG_SRC = $(wildcard $(FSV_SRCDIR)/log/*.c)
 MOD_LOG_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_LOG_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/log/%.c $(FSERV_H)
 	$(C)  $(CFLAGS) $<  -o$@
-LOG_O := $(MOD_LOG_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ) $(FF_HTTP_OBJ)
+LOG_O := $(MOD_LOG_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffjson.o \
+	$(FF_OBJ_DIR)/ffparse.o \
+	$(FF_OBJ_DIR)/ffgz.o \
+	$(FF_OBJ_DIR)/crc.o
 log.$(SO): $(LOG_O)
-	$(LD)  -shared $(LOG_O) $(LDFLAGS) $(ZLIB)  -o$@
+	$(LD)  -shared $(LOG_O) $(LDFLAGS) -lz-ff  -o$@
 
 
 MOD_CACHE_SRC = $(wildcard $(FSV_SRCDIR)/cache/*.c)
 MOD_CACHE_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_CACHE_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/cache/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  -o$@
-CACHE_O := $(MOD_CACHE_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ)
+CACHE_O := $(MOD_CACHE_OBJ) $(FF_ALL_OBJS) \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffjson.o \
+	$(FF_OBJ_DIR)/ffparse.o
 cache.$(SO): $(CACHE_O)
 	$(LD)  -shared $(CACHE_O) $(LDFLAGS)  -o$@
 
@@ -41,7 +54,12 @@ MOD_NET_SRC = $(wildcard $(FSV_SRCDIR)/net/*.c)
 MOD_NET_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_NET_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/net/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  -o$@
-NET_O := $(MOD_NET_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ) $(FF_OBJ_DIR)/ffurl.o $(FF_OBJ_DIR)/ffdns.o
+NET_O := $(MOD_NET_OBJ) $(FF_ALL_OBJS) \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffurl.o \
+	$(FF_OBJ_DIR)/ffdns.o \
+	$(FF_OBJ_DIR)/ffjson.o \
+	$(FF_OBJ_DIR)/ffparse.o
 net.$(SO): $(NET_O)
 	$(LD)  -shared $(NET_O) $(LDFLAGS)  -o$@
 
@@ -50,16 +68,25 @@ MOD_HTTP_SRC = $(wildcard $(FSV_SRCDIR)/http/*.c)
 MOD_HTTP_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_HTTP_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http/%.c $(wildcard $(FSV_SRCDIR)/http/*.h) $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  -o$@
-HTTP_O := $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ) $(FF_HTTP_OBJ)
+HTTP_O := $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
+	$(FF_OBJ_DIR)/ffxml.o \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffjson.o \
+	$(FF_OBJ_DIR)/ffparse.o \
+	$(FF_OBJ_DIR)/ffgz.o \
+	$(FF_OBJ_DIR)/crc.o
 http.$(SO): $(HTTP_O)
-	$(LD)  -shared $(HTTP_O) $(LDFLAGS) $(ZLIB)  -o$@
+	$(LD)  -shared $(HTTP_O) $(LDFLAGS) -lz-ff  -o$@
 
 
 MOD_PROXY_SRC = $(wildcard $(FSV_SRCDIR)/http-proxy/*.c)
 MOD_PROXY_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_PROXY_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/http-proxy/%.c $(wildcard $(FSV_SRCDIR)/http-proxy/*.h) $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  -o$@
-PRX_O := $(MOD_PROXY_OBJ) $(FF_ALL_OBJS) $(FF_DATA_OBJ) $(FF_HTTP_OBJ)
+PRX_O := $(MOD_PROXY_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffjson.o \
+	$(FF_OBJ_DIR)/ffparse.o
 http-proxy.$(SO): $(PRX_O)
 	$(LD)  -shared $(PRX_O) $(LDFLAGS)  -o$@
 
@@ -92,11 +119,14 @@ strip: all $(BINS:.$(SO)=.$(SO).debug) $(BIN).debug $(BINS:.exe=.exe.debug)
 
 
 installd: all
-	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod $(RUNDIR)/sbin \
+	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod \
 		$(RUNDIR)/cache $(RUNDIR)/www
-	$(CP) $(FSV_SRCDIR)/../conf/* $(RUNDIR)/conf/
+	$(CP) $(PROJDIR)/conf/* $(RUNDIR)/conf/
 	$(CP) *.$(SO) $(RUNDIR)/mod/
-	$(CP) $(FSV_SRCDIR)/../README.txt $(FSV_SRCDIR)/../CHANGES.txt $(RUNDIR)/
+	$(CP) $(FF3PTLIB)/libz-ff.$(SO) \
+		$(RUNDIR)/mod/
+	$(CP) $(PROJDIR)/README.txt $(PROJDIR)/CHANGES.txt \
+		$(RUNDIR)/
 
 # http
 	$(CP) $(FSV_SRCDIR)/../conf/fserv.static.conf $(RUNDIR)/conf/fserv.conf
@@ -105,19 +135,19 @@ installd: all
 
 	$(CP) $(FSV_SRCDIR)/http-proxy/fwdproxy.conf $(FSV_SRCDIR)/http-proxy/revproxy.conf $(RUNDIR)/conf/
 
-ifeq ($(OSTYPE),unix)
-	$(CP) $(PROJDIR)/build/fserv-exec-unix $(RUNDIR)/sbin/fserv
-	$(CP) $(BIN) $(RUNDIR)/sbin/
-	$(CP) $(FF3PTLIB)/libz.so $(FF3PTLIB)/libcrypto.so $(FF3PTLIB)/libssl.so \
+ifneq ($(OS),win)
+	$(CP) $(PROJDIR)/build/fserv-exec-unix $(RUNDIR)/fserv
+	$(CP) $(BIN) $(RUNDIR)/
+	$(CP) $(FF3PTLIB)/libcrypto.so $(FF3PTLIB)/libssl.so \
 		$(RUNDIR)/mod/
 
-	chmod 755 $(RUNDIR)/sbin/fserv $(RUNDIR)/sbin/$(BIN) $(RUNDIR)/mod/*.$(SO)
+	chmod 755 $(RUNDIR)/fserv $(RUNDIR)/$(BIN) $(RUNDIR)/mod/*.$(SO)
 
 else #windows:
-	$(CP) $(PROJDIR)/build/fserv-exec-win.cmd $(RUNDIR)/sbin/fserv.cmd
-	$(CP) $(BIN) $(RUNDIR)/sbin/fserv-bin.exe
+	$(CP) $(PROJDIR)/build/fserv-exec-win.cmd $(RUNDIR)/fserv.cmd
+	$(CP) $(BIN) $(RUNDIR)/fserv-bin.exe
 	$(CP) $(PROJDIR)/build/*_fserv.cmd $(RUNDIR)/
-	$(CP) $(FF3PTLIB)/zlib1.dll $(FF3PTLIB)/ssleay32.dll $(FF3PTLIB)/libeay32.dll \
+	$(CP) $(FF3PTLIB)/ssleay32.dll $(FF3PTLIB)/libeay32.dll \
 		$(RUNDIR)/mod/
 
 endif

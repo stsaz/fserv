@@ -504,7 +504,7 @@ static char* srv_getpath(char *dst, size_t *dstlen, const char *fn, size_t len)
 	len = ffs_fmt(dst, dst + cap, "%*s%*s"
 		, (!isabs) ? serv->rootdir.len : (size_t)0, serv->rootdir.ptr, len, fn);
 
-	len = ffpath_norm(dst, cap, dst, len, FFPATH_STRICT_BOUNDS);
+	len = ffpath_norm(dst, cap, dst, len, FFPATH_WINDOWS | FFPATH_FORCESLASH | FFPATH_MERGEDOTS | FFPATH_STRICT_BOUNDS);
 	if (len == 0) {
 		if (aloc)
 			ffmem_free(dst);
