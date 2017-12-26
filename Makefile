@@ -16,8 +16,9 @@ FF3PT := $(ROOT)/ff-3pt
 include $(FFOS)/makeconf
 
 FF_OBJ_DIR := ./ff-obj
+FFOS_CFLAGS := $(CFLAGS) -pthread
 FF_CFLAGS := $(CFLAGS)
-FF3PTLIB := $(FF3PT)/$(OS)-$(ARCH)
+FF3PTLIB := $(FF3PT)-bin/$(OS)-$(ARCH)
 FF3PT_CFLAGS := $(CFLAGS)
 
 override CFLAGS += -Wall -Werror \

@@ -1010,7 +1010,7 @@ static void http_resphdrs(fsv_httphandler *h)
 	}
 
 	//insert HTTP headers buffer into the chain of 'ffiovec' headers
-	c->hdr_iovs = ffmem_tcalloc(ffiovec, 1 + h->data->ht.hdr_cnt);
+	c->hdr_iovs = ffmem_callocT(1 + h->data->ht.hdr_cnt, ffiovec);
 	if (c->hdr_iovs == NULL) {
 		syserrlog(h->logctx, FSV_LOG_ERR, "%e", FFERR_BUFALOC);
 		goto fail;

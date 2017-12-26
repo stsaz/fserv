@@ -93,7 +93,7 @@ static void drix_free(drix_obj *o);
 static void drix_fin(drix_obj *o, fsv_logctx *logctx);
 static int drix_getobj(fsv_httphandler *h, drix_obj **po);
 static ssize_t drix_getvar(void *con, const char *name, size_t namelen, void *dst, size_t cap);
-static int drix_ents_sortfunc(const void *a, const void *b);
+static int drix_ents_sortfunc(FF_QSORT_PARAMS);
 static void drix_ifmatch(drix_obj *o, fsv_httphandler *h, int *st);
 
 enum DRIX_ITEM_FLAGS {
@@ -140,27 +140,13 @@ static int drixm_conf_cache(ffparser_schem *ps, drix_module *mod, ffpars_ctx *ar
 /** Read the whole file into memory buffer. */
 void* http_loadfile(const char *fn, size_t *size)
 {
-	fffd fd;
-	char *d = NULL;
-	uint64 fsz;
-
-	fd = fffile_open(fn, O_RDONLY);
-	if (fd == FF_BADFD)
+	ffarr a = {0};
+	if (0 != fffile_readall(&a, fn, 1 * 1024 * 1024)) {
+		ffarr_free(&a);
 		return NULL;
-
-	fsz = fffile_size(fd);
-	d = ffmem_alloc(fsz);
-
-	if (d != NULL
-		&& fsz != fffile_read(fd, d, (size_t)fsz)) {
-		ffmem_free(d);
-		d = NULL;
 	}
-
-	*size = (size_t)fsz;
-
-	fffile_close(fd);
-	return d;
+	*size = a.len;
+	return a.ptr;
 }
 
 static int drixm_conf_template(ffparser_schem *ps, drix_module *mod, const ffstr *fn)
@@ -305,7 +291,7 @@ static int dirents_fill(direntries *e)
 
 
 /** Alpha-sort filenames, directories first. */
-static int drix_ents_sortfunc(const void *a, const void *b)
+static int drix_ents_sortfunc(FF_QSORT_PARAMS)
 {
 	const direntry *e1 = a;
 	const direntry *e2 = b;
@@ -402,7 +388,7 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 		o = NULL;
 	}
 
-	qsort(e.ents.ptr, e.ents.len, sizeof(direntry), &drix_ents_sortfunc);
+	ff_qsort(e.ents.ptr, e.ents.len, sizeof(direntry), &drix_ents_sortfunc, NULL);
 
 	if (0 != drix_html_additem(&buf, NULL, F_INIT))
 		goto fail;

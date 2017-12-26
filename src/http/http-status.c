@@ -186,7 +186,7 @@ static int stat_newctx(fsv_http_hdlctx *ctx)
 
 static const int json_top[] = {
 	FFJSON_TOBJ
-		, FFJSON_FKEYNAME, FFJSON_FINTVAL | FFJSON_F32BIT
+		, FFJSON_FKEYNAME, FFJSON_FINTVAL
 		, FFJSON_FKEYNAME
 			, FFJSON_TARR
 };
@@ -270,7 +270,7 @@ static void stat_update(void)
 	ffjson_cookreset(&statm->jscook);
 	ffjson_bufaddv(&statm->jscook, json_top, FFCNT(json_top)
 		, FFJSON_CTXOPEN
-		, "time", now.s
+		, "time", (int64)fftime_sec(&now)
 		, "data"
 			, FFJSON_CTXOPEN
 			, NULL);

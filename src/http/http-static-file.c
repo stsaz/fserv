@@ -44,7 +44,7 @@ typedef struct stfl_obj {
 	fffd f;
 	uint64 fsize;
 	fffileid fid;
-	uint modtm;
+	fftime modtm;
 	const char *mime;
 
 	fsv_cacheitem_id *cacheid;
@@ -432,15 +432,17 @@ static stfl_obj * stfl_fromcache(fsv_cacheitem *ca, const char *fn, fsv_logctx *
 
 	o = *(stfl_obj**)ca->data;
 
-	if (0 == fffile_infofn(fn, &fi)
-		&& o->modtm == fffile_infomtime(&fi).s
+	if (0 == fffile_infofn(fn, &fi)) {
+		fftime t = fffile_infomtime(&fi);
+		if (!fftime_cmp(&o->modtm, &t)
 #ifdef FF_UNIX
-		&& o->fid == fffile_infoid(&fi)
+			&& o->fid == fffile_infoid(&fi)
 #else
-		&& o->fsize == fffile_infosize(&fi)
+			&& o->fsize == fffile_infosize(&fi)
 #endif
-		) {
-		return o;
+			) {
+			return o;
+		}
 	}
 
 	fsv_dbglog(logctx, FSV_LOG_DBGFLOW, STFL_MODNAME, NULL, "file was modified: %s", fn);
@@ -578,7 +580,7 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 	f = FF_BADFD;
 	o->fsize = fffile_infosize(&fi);
 	o->fid = fffile_infoid(&fi);
-	o->modtm = fffile_infomtime(&fi).s;
+	o->modtm = fffile_infomtime(&fi);
 
 	ffpath_splitname(fn.ptr, fn.len, NULL, &fn_ext);
 	o->mime = stfl_findmime(&fn_ext);
@@ -619,7 +621,6 @@ static void stfl_onevent(fsv_httphandler *h)
 {
 	stfl_obj *o = NULL;
 	uint64 fsize, foff;
-	fftime modtm;
 	ffstr ifmod;
 	int st, f;
 
@@ -635,7 +636,7 @@ static void stfl_onevent(fsv_httphandler *h)
 	}
 
 	if (0 != ffhttp_findihdr(&h->req->h, FFHTTP_IFMODIFIED_SINCE, &ifmod)
-		&& o->modtm == fftime_strtounix(ifmod.ptr, ifmod.len, FFTIME_WDMY)) {
+		&& fftime_to_time_t(&o->modtm) == fftime_strtounix(ifmod.ptr, ifmod.len, FFTIME_WDMY)) {
 		st = FFHTTP_304_NOT_MODIFIED;
 		f = 0;
 		goto done;
@@ -643,8 +644,6 @@ static void stfl_onevent(fsv_httphandler *h)
 
 	fsize = o->fsize;
 	foff = 0;
-	modtm.s = o->modtm;
-	modtm.mcs = 0;
 	if (0 != stfl_process_range(h, &st, &fsize, &foff)) {
 		f = FSV_HTTP_ERROR;
 		goto done;
@@ -653,7 +652,7 @@ static void stfl_onevent(fsv_httphandler *h)
 	if (o->mime != NULL)
 		ffstr_setz(&h->resp->cont_type, o->mime);
 
-	stfl_add_hdrs(h, &modtm);
+	stfl_add_hdrs(h, &o->modtm);
 
 	h->id->udata = o;
 	ffhttp_setstatus(h->resp, st);

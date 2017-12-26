@@ -3,12 +3,12 @@ Copyright 2014 Simon Zolin
 */
 
 #include <core/fserv.h>
-#include <FF/timer-queue.h>
+#include <FF/sys/timer-queue.h>
 #include <FF/time.h>
 #include <FF/path.h>
-#include <FF/filemap.h>
+#include <FF/sys/filemap.h>
 #include <FF/data/conf.h>
-#include <FF/dir.h>
+#include <FF/sys/dir.h>
 #include <FFOS/process.h>
 #include <FFOS/sig.h>
 #include <FFOS/atomic.h>
@@ -47,7 +47,6 @@ typedef struct fmodule {
 typedef struct fserver {
 	fffd kq;
 	ffkqu_time quTm;
-	const ffkqu_time *pquTm;
 
 	fsv_timer tmr;
 	fftimer_queue tmrqu;
@@ -376,7 +375,7 @@ static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod)
 	char fn[FF_MAXPATH];
 	size_t len;
 
-	if (!ffpath_isvalidfn(binfn->ptr, binfn->len))
+	if (!ffpath_isvalidfn(binfn->ptr, binfn->len, 0))
 		return FFPARS_EBADVAL;
 
 	len = ffs_fmt(fn, fn + FFCNT(fn), "%Smod/%S." FFDL_EXT "%Z"
@@ -969,7 +968,7 @@ static int srv_start(void)
 	srv_timer(&serv->tmr, 1, &curtime_update, &serv->time);
 	fftime_now(&serv->time.time);
 
-	serv->pquTm = ffkqu_settm(&serv->quTm, (uint)-1);
+	ffkqu_settm(&serv->quTm, (uint)-1);
 
 	serv->state = FSVMAIN_RUN;
 	if (0 != srv_startmods()) {
@@ -1020,7 +1019,7 @@ static int srv_evloop(void)
 	for (;;) {
 		while (serv->state == FSVMAIN_RUN) {
 			int i;
-			int nevents = ffkqu_wait(serv->kq, events.ptr, events.cap, serv->pquTm);
+			int nevents = ffkqu_wait(serv->kq, events.ptr, events.cap, &serv->quTm);
 
 #ifdef FSV_DBGTASKS
 			if (nevents > 0 && nevents != 1) {
@@ -1161,7 +1160,9 @@ static uint curtime_get(curtime_t *tt, fftime *t, ffdtm *dt, char *dst, size_t c
 		ffsz_copy(dst, cap, tt->wdmy, r);
 	}
 
-	if (t != NULL)
+	if (t != NULL) {
 		*t = tt->time;
+		t->sec = fftime_to_time_t(&tt->time);
+	}
 	return 0;
 }

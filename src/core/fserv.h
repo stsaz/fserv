@@ -4,15 +4,15 @@ Copyright 2014 Simon Zolin.
 
 #pragma once
 
-#include <FFOS/time.h>
+#include <FF/time.h>
 #include <FF/array.h>
 #include <FF/data/parse.h>
-#include <FF/timer-queue.h>
-#include <FF/taskqueue.h>
-#include <FF/sendfile.h>
+#include <FF/sys/timer-queue.h>
+#include <FF/sys/taskqueue.h>
+#include <FF/sys/sendfile.h>
 
 
-#define FSV_VER "0.25"
+#define FSV_VER "0.26"
 
 typedef struct fsv_main fsv_main;
 typedef struct fsv_core fsv_core;

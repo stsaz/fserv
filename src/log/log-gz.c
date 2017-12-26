@@ -3,7 +3,7 @@ Copyright (c) 2014 Simon Zolin
 */
 
 #include "log.h"
-#include <FF/data/gz.h>
+#include <FF/pack/gz.h>
 
 
 typedef struct loggzip {

@@ -730,7 +730,7 @@ void htpx_readresponse(void *udata)
 
 	c->hdr.len += r;
 	c->nread += r;
-	htpxm->allread += r;
+	ffatom_add(&htpxm->allread, r);
 	dbglog(c->logctx, FSV_LOG_DBGNET, "received: +%L [%U]", (size_t)r, (int64)c->nread);
 
 	htpx_http.send(c->hfrecv, c->hdr.ptr, c->hdr.len, FSV_HTTP_MORE);
@@ -912,7 +912,7 @@ static void htpx_readbody(void *udata)
 	}
 
 	c->nread += r;
-	htpxm->allread += r;
+	ffatom_add(&htpxm->allread, r);
 	c->body.len += r;
 	dbglog(c->logctx, FSV_LOG_DBGNET, "received body: +%L, %U/%D"
 		, r, (uint64)(c->nread - c->resp.h.len), c->resp.h.cont_len);
@@ -1282,7 +1282,7 @@ static void htpx_readdata(void *udata)
 	}
 
 	c->nread += r;
-	htpxm->allread += r;
+	ffatom_add(&htpxm->allread, r);
 	dbglog(c->logctx, FSV_LOG_DBGNET, "received data: +%L [%U]"
 		, r, c->nread);
 

@@ -157,86 +157,19 @@ end:
 	return r;
 }
 
-#ifdef FF_UNIX
-static FFINL int daemonize() {
-	fffd fd;
-
-	setsid();
-	umask(0);
-
-	fd = fffile_open("/dev/null", O_RDWR);
-	if (fd == FF_BADFD) {
-		flog_errsys("error", "%s", "open /dev/null");
-		return -1;
-	}
-	dup2(fd, 0);
-	dup2(fd, 1);
-	if (fd > 2)
-		fffile_close(fd);
-	return 0;
-}
-
 static fffd bgrun(const cmdline *opts)
 {
+#ifdef FF_WIN
+	if (opts->bground)
+		ffterm_detach();
+	else
+#endif
 	if (opts->daemon) {
-		fffd ps = ffps_fork();
-		if (ps == 0 && 0 != daemonize())
-			return FF_BADFD;
+		fffd ps = ffps_createself_bg("--bg");
 		return ps;
 	}
-
 	return 0;
 }
-
-#else
-
-/** Create a copy of the current process. */
-static fffd ps_createself(/*const ffsyschar **args*/)
-{
-	BOOL b;
-	PROCESS_INFORMATION info;
-	STARTUPINFOW si = { 0 };
-	ffsyschar *args
-		, *pargs;
-	ffsyschar *ps_args = GetCommandLine();
-	size_t cap = ffq_len(ps_args) + FFSLEN(" --bg") + 1;
-	ffsyschar filename[FF_MAXPATH];
-
-	if (0 == GetModuleFileName(NULL, filename, FFCNT(filename)))
-		return FF_BADFD;
-
-	args = ffq_alloc(cap);
-	if (args == NULL)
-		return FF_BADFD;
-	pargs = args;
-	pargs = ffq_copyz(pargs, args + cap, ps_args);
-	pargs = ffq_copyz(pargs, args + cap, L" --bg");
-	pargs = ffq_copyc(pargs, args + cap, L'\0');
-
-	b = CreateProcess(filename, args, NULL, NULL, 0 /*inherit handles*/, 0, NULL /*env*/
-		, NULL /*startup dir*/, &si, &info);
-
-	ffmem_free(args);
-
-	if (!b)
-		return FF_BADFD;
-
-	CloseHandle(info.hThread);
-	return info.hProcess;
-}
-
-static fffd bgrun(const cmdline *opts)
-{
-	if (opts->bground) {
-		FreeConsole();
-
-	} else if (opts->daemon) {
-		return ps_createself();
-	}
-
-	return 0;
-}
-#endif
 
 FF_EXTN const fsv_main * fsv_getmain(void);
 

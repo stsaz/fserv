@@ -198,7 +198,7 @@ static int lsnx_conf_log(ffparser_schem *ps, lisnctx *lx, ffpars_ctx *a)
 static int lsnx_conf_listen(ffparser_schem *ps, lisnctx *lx, const ffstr *s)
 {
 	ffstr ip, port;
-	if (0 != ffaddr_split(s->ptr, s->len, &ip, &port))
+	if (0 != ffip_split(s->ptr, s->len, &ip, &port))
 		return FFPARS_EBADVAL;
 
 	if (ip.len == 0)
@@ -303,14 +303,9 @@ static int lsnx_start(lisnctx *lx)
 {
 	int er = 0;
 
-	lx->lsk = ffskt_create(ffaddr_family(&lx->addr), SOCK_STREAM, 0);
+	lx->lsk = ffskt_create(ffaddr_family(&lx->addr), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
 	if (lx->lsk == FF_BADSKT) {
 		er = FFERR_SKTCREAT;
-		goto fail;
-	}
-
-	if (0 != ffskt_nblock(lx->lsk, 1)) {
-		er = FFERR_NBLOCK;
 		goto fail;
 	}
 

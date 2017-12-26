@@ -736,7 +736,7 @@ static void conn_connect(fsv_conn *c, int flags)
 
 	if (c->ipv4) {
 
-		struct in_addr ip4;
+		ffip4 ip4;
 		if (0 != ffip4_parse(&ip4, c->host.ptr, c->hostlen)) {
 			errlog(c->logctx, FSV_LOG_ERR, "invalid IPv4 address: %*s"
 				, (size_t)c->hostlen, c->host.ptr);
@@ -744,7 +744,7 @@ static void conn_connect(fsv_conn *c, int flags)
 			return;
 		}
 
-		ffip4_set(&adr, &ip4);
+		ffip4_set(&adr, (void*)&ip4);
 
 	} else if (c->ipv6) {
 
@@ -817,7 +817,7 @@ static void conn_connectaddr(fsv_conn *c, ffaddr *adr)
 		c->saddr[n] = '\0';
 	}
 
-	c->sk = ffskt_create(ffaddr_family(adr), SOCK_STREAM, IPPROTO_TCP);
+	c->sk = ffskt_create(ffaddr_family(adr), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
 	if (c->sk == FF_BADSKT) {
 		int lev = ((fferr_last() == EINVAL) ? FSV_LOG_WARN : FSV_LOG_ERR);
 
@@ -833,11 +833,6 @@ static void conn_connectaddr(fsv_conn *c, ffaddr *adr)
 	}
 
 	dbglog(c->logctx, FSV_LOG_DBGNET, "trying address %s...", c->saddr);
-
-	if (0 != ffskt_nblock(c->sk, 1)) {
-		syserrlog(c->logctx, FSV_LOG_ERR, "%S: %e", &c->host, FFERR_NBLOCK);
-		goto fail;
-	}
 
 	ffaio_init(&c->aiotask);
 	c->aiotask.sk = c->sk;

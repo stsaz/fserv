@@ -7,6 +7,11 @@ HISTORY OF FSERV
  "-" - bugfix
 
 
+fserv v0.26.1 - Jul 10, 2016
+
+ - core: fix segfault on server stop when using default config file path (v0.26 bug)
+
+
 fserv v0.26 - May 26, 2016
 
  * core: "root" config setting is optional

@@ -4,7 +4,7 @@ Copyright 2014 Simon Zolin.
 
 #include <core/fserv.h>
 #include <http/iface.h>
-#include <FF/data/gz.h>
+#include <FF/pack/gz.h>
 
 
 typedef struct gz_module {
@@ -159,7 +159,7 @@ static gzcon* gz_newcon(gz_ctx *zx)
 		goto err;
 
 	if (0 != ffgz_winit(&c->gz, zx->gzlevel, zx->gzmem)
-		|| 0 != ffgz_wfile(&c->gz, NULL, 0)) {
+		|| 0 != ffgz_wfile(&c->gz, NULL, NULL)) {
 		ffgz_wclose(&c->gz);
 		ffstr_free(&c->buf);
 		goto err;
@@ -188,7 +188,7 @@ static void gz_onevent(fsv_httphandler *h)
 	gzcon *c = h->id->udata;
 	gz_ctx *zx = h->hctx;
 	ffstr chunk;
-	int n, r, f = 0;
+	int n = 0, r, f = 0;
 	size_t rd, wr, datalen;
 
 	if (h->id->udata == NULL) {
@@ -295,7 +295,7 @@ static void gz_ondone(fsv_httphandler *h)
 	gzcon *c = h->id->udata;
 
 	if (fsv_log_checkdbglevel(h->logctx, FSV_LOG_DBGFLOW)) {
-		uint ratio = 100 - FF_SAFEDIV(c->gz.outsize * 100, c->gz.insize);
+		uint ratio = 100 - FFINT_DIVSAFE(c->gz.outsize * 100, c->gz.insize);
 		fsv_dbglog(h->logctx, FSV_LOG_DBGFLOW, GZ_MODNAME, NULL, "input: %U, output: %U, ratio: %u%%"
 			, c->gz.insize, c->gz.outsize, ratio);
 	}

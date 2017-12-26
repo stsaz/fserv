@@ -325,7 +325,8 @@ static const byte htpx_nocache_resp_hdrs[] = {
 /** Use s-max-age and max-age and Expires+Date to set document expiration time. */
 static int htcache_getexpire(htcache *c, const ffhttp_response *resp)
 {
-	uint maxag = (uint)-1, date, expires, fcc = 0;
+	uint maxag = (uint)-1, fcc = 0;
+	uint64 date, expires;
 	ffdtm dt;
 	fftime t;
 	ffstr val;
@@ -352,13 +353,13 @@ static int htcache_getexpire(htcache *c, const ffhttp_response *resp)
 		&& 0 != fftime_fromstr(&dt, val.ptr, val.len, FFTIME_WDMY)) {
 
 		fftime_join(&t, &dt, FFTIME_TZUTC);
-		expires = t.s;
+		expires = fftime_to_time_t(&t);
 
 		if (0 != ffhttp_findihdr(&resp->h, FFHTTP_DATE, &val)
 			&& 0 != fftime_fromstr(&dt, val.ptr, val.len, FFTIME_WDMY)) {
 
 			fftime_join(&t, &dt, FFTIME_TZUTC);
-			date = t.s;
+			date = fftime_to_time_t(&t);
 
 			if (date >= expires)
 				maxag = 0;

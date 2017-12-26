@@ -709,7 +709,7 @@ static void resv_proc_data(dns_serv *serv, const ffstr *resp)
 		fftime t = resvm->core->fsv_gettime();
 		fftime_diff(&q->firstsend, &t);
 		dbglog_q(q, FSV_LOG_DBGNET, "resolved IPv%u in %u.%03us"
-			, (is4) ? 4 : 6, t.s, t.mcs / 1000);
+			, (is4) ? 4 : 6, (int)fftime_sec(&t), (int)fftime_msec(&t));
 	}
 
 	if (q->need4 || q->need6)
@@ -858,14 +858,14 @@ static uint resv_nrecs(dns_query *q, ffdns_hdr_host *h, const ffstr *resp, const
 				errlog_q(q, FSV_LOG_ERR, "#%u: invalid class in %s record: %u", h->id, "A", ans.clas);
 				continue;
 			}
-			if (ans.len != sizeof(struct in_addr)) {
+			if (ans.len != sizeof(ffip4)) {
 				errlog_q(q, FSV_LOG_ERR, "#%u: invalid %s address length: %u", h->id, "A", ans.len);
 				continue;
 			}
 
 			if (fsv_log_checkdbglevel(resvm->logctx, FSV_LOG_DBGFLOW)) {
-				char ip[FF_MAXIP6];
-				size_t iplen = ffip4_tostr(ip, FFCNT(ip), ans.data, ans.len, 0);
+				char ip[FFIP4_STRLEN];
+				size_t iplen = ffip4_tostr(ip, FFCNT(ip), (void*)ans.data);
 				dbglog_q(q, FSV_LOG_DBGFLOW, "%s for %S : %*s, TTL: %u"
 					, "A", &name, (size_t)iplen, ip, ans.ttl);
 			}
@@ -879,14 +879,14 @@ static uint resv_nrecs(dns_query *q, ffdns_hdr_host *h, const ffstr *resp, const
 				errlog_q(q, FSV_LOG_ERR, "#%u: invalid class in %s record: %u", h->id, "AAAA", ans.clas);
 				continue;
 			}
-			if (ans.len != sizeof(struct in6_addr)) {
+			if (ans.len != sizeof(ffip6)) {
 				errlog_q(q, FSV_LOG_ERR, "#%u: invalid %s address length: %u", h->id, "AAAA", ans.len);
 				continue;
 			}
 
 			if (fsv_log_checkdbglevel(resvm->logctx, FSV_LOG_DBGFLOW)) {
-				char ip[FF_MAXIP6];
-				size_t iplen = ffip6_tostr(ip, FFCNT(ip), ans.data, ans.len, 0);
+				char ip[FFIP6_STRLEN];
+				size_t iplen = ffip6_tostr(ip, FFCNT(ip), (void*)ans.data);
 				dbglog_q(q, FSV_LOG_DBGFLOW, "%s for %S : %*s, TTL: %u"
 					, "AAAA", &name, (size_t)iplen, ip, ans.ttl);
 			}
@@ -1067,7 +1067,7 @@ static int dns_serv_init(dns_serv *serv)
 	int er;
 	ffskt sk;
 
-	sk = ffskt_create(ffaddr_family(&serv->addr), SOCK_DGRAM, 0);
+	sk = ffskt_create(ffaddr_family(&serv->addr), SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
 	if (sk == FF_BADSKT) {
 		er = FFERR_SKTCREAT;
 		goto fail;
@@ -1081,11 +1081,6 @@ static int dns_serv_init(dns_serv *serv)
 			er = FFERR_SKTLISTEN;
 			goto fail;
 		}
-	}
-
-	if (0 != ffskt_nblock(sk, 1)) {
-		er = FFERR_NBLOCK;
-		goto fail;
 	}
 
 	ffaio_init(&serv->aiotask);

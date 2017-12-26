@@ -132,7 +132,7 @@ static int fcach_parsehdr(fcache *c, fffd fhdr, fsv_logctx *logctx);
 static int fcach_writehdr(fcache *c, fffd fhdr, fsv_fcacheitem *ca);
 
 static FFINL void fcach_setexpire(fcache *c, uint expire) {
-	c->h->expire_tm = (expire != 0) ? expire : fcachm->core->fsv_gettime().s + c->cx->def_expiry;
+	c->h->expire_tm = (expire != 0) ? expire : fcachm->core->fsv_gettime().sec + c->cx->def_expiry;
 }
 
 /** Return TRUE if hash is not set. */

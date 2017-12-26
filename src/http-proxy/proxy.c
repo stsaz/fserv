@@ -396,8 +396,8 @@ static void htpxm_status(const fsv_status *statusmod)
 
 static void htpx_statustimer(const fftime *now, void *param)
 {
-	htpxm->write_bps = ffatom_xchg(&htpxm->allwritten, 0);
-	htpxm->read_bps = ffatom_xchg(&htpxm->allread, 0);
+	htpxm->write_bps = ffatom_swap(&htpxm->allwritten, 0);
+	htpxm->read_bps = ffatom_swap(&htpxm->allread, 0);
 }
 
 
@@ -636,7 +636,7 @@ void htpx_accesslog(htpxcon *c)
 	fftime stop = {0};
 	uint64 sent_body = 0, recvd_body = 0;
 
-	if (c->conn_acq_time.s != 0) {
+	if (fftime_sec(&c->conn_acq_time) != 0) {
 		stop = htpxm->core->fsv_gettime();
 		fftime_diff(&c->conn_acq_time, &stop);
 	}

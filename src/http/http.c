@@ -352,7 +352,7 @@ static int hthost_conf_errorhandler(ffparser_schem *ps, httphost *h, ffpars_ctx 
 
 static int httgt_conf_index(ffparser_schem *ps, httptarget *tgt, const ffstr *val)
 {
-	if (!ffpath_isvalidfn(val->ptr, val->len))
+	if (!ffpath_isvalidfn(val->ptr, val->len, 0))
 		return FFPARS_EBADVAL;
 
 	if (NULL == ffarr_grow(&tgt->index, val->len + 1, 0))
@@ -677,8 +677,8 @@ static void http_status(const fsv_status *statusmod)
 
 static void http_statustimer(const fftime *now, void *param)
 {
-	httpm->write_bps = ffatom_xchg(&httpm->allwritten, 0);
-	httpm->read_bps = ffatom_xchg(&httpm->allread, 0);
+	httpm->write_bps = ffatom_swap(&httpm->allwritten, 0);
+	httpm->read_bps = ffatom_swap(&httpm->allread, 0);
 }
 
 
