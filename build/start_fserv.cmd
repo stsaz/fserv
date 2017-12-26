@@ -1,1 +1,1 @@
-fserv.cmd -d
+fserv -d

@@ -1,19 +1,24 @@
 # fserv v0.26 makefile
 
-BIN := fserv-bin
 ROOT := ..
 PROJDIR := $(ROOT)/fserv
 FSV_SRCDIR := $(PROJDIR)/src
 RUNDIR := ./fserv-0
 VER =
 OS :=
-OPT := LTO
+OPT := LTO3
 
 FFOS := $(ROOT)/ffos
 FF := $(ROOT)/ff
 FF3PT := $(ROOT)/ff-3pt
 
 include $(FFOS)/makeconf
+
+ifeq ($(OS),win)
+BIN := fserv.exe
+else
+BIN := fserv
+endif
 
 FF_OBJ_DIR := ./ff-obj
 FFOS_CFLAGS := $(CFLAGS) -pthread

@@ -1,1 +1,1 @@
-fserv.cmd -s stop
+fserv -s stop

@@ -38,7 +38,7 @@ LOG_O := $(MOD_LOG_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
 	$(FF_OBJ_DIR)/ffgz.o \
 	$(FF_OBJ_DIR)/crc.o
 log.$(SO): $(LOG_O)
-	$(LD)  -shared $(LOG_O) $(LDFLAGS) -lz-ff  -o$@
+	$(LD)  -shared $(LOG_O) $(LDFLAGS) $(LD_RPATH_ORIGIN) -lz-ff  -o$@
 
 
 MOD_CACHE_SRC = $(wildcard $(FSV_SRCDIR)/cache/*.c)
@@ -85,7 +85,7 @@ HTTP_O := $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
 	$(FF_OBJ_DIR)/ffgz.o \
 	$(FF_OBJ_DIR)/crc.o
 http.$(SO): $(HTTP_O)
-	$(LD)  -shared $(HTTP_O) $(LDFLAGS) -lz-ff  -o$@
+	$(LD)  -shared $(HTTP_O) $(LDFLAGS) $(LD_RPATH_ORIGIN) -lz-ff  -o$@
 
 
 MOD_PROXY_SRC = $(wildcard $(FSV_SRCDIR)/http-proxy/*.c)
@@ -111,7 +111,7 @@ SSL_O = $(OBJ_DIR)/ssl.o \
 	$(FF_OBJ_DIR)/ffsendfile.o \
 	$(FF_ALL_OBJS) $(FF_OBJ_DIR)/ffparse.o $(FF_OBJ_DIR)/ffutf8.o $(FF_OBJ_DIR)/ffssl.o
 ssl.$(SO): $(SSL_O)
-	$(LD)  -shared $(SSL_O) $(LDFLAGS) $(SSL_LIBS)  -o$@
+	$(LD)  -shared $(SSL_O) $(LDFLAGS) $(LD_RPATH_ORIGIN) $(SSL_LIBS)  -o$@
 
 
 MOD_TEST_SRC = $(wildcard $(FSV_SRCDIR)/test/*.c)
@@ -151,16 +151,14 @@ installd: all
 	$(CP) $(FSV_SRCDIR)/http-proxy/fwdproxy.conf $(FSV_SRCDIR)/http-proxy/revproxy.conf $(RUNDIR)/conf/
 
 ifneq ($(OS),win)
-	$(CP) $(PROJDIR)/build/fserv-exec-unix $(RUNDIR)/fserv
 	$(CP) $(BIN) $(RUNDIR)/
 	$(CP) $(FF3PTLIB)/libcrypto.so $(FF3PTLIB)/libssl.so \
 		$(RUNDIR)/mod/
 
-	chmod 755 $(RUNDIR)/fserv $(RUNDIR)/$(BIN) $(RUNDIR)/mod/*.$(SO)
+	chmod 755 $(RUNDIR)/$(BIN)
 
 else #windows:
-	$(CP) $(PROJDIR)/build/fserv-exec-win.cmd $(RUNDIR)/fserv.cmd
-	$(CP) $(BIN) $(RUNDIR)/fserv-bin.exe
+	$(CP) $(BIN) $(RUNDIR)/
 	$(CP) $(PROJDIR)/build/*_fserv.cmd $(RUNDIR)/
 	$(CP) $(FF3PTLIB)/ssleay32.dll $(FF3PTLIB)/libeay32.dll \
 		$(RUNDIR)/mod/

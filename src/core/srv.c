@@ -163,7 +163,7 @@ static uint curtime_get(curtime_t *tt, fftime *t, ffdtm *dt, char *dst, size_t c
 
 static void * srv_create(void)
 {
-	if (0 != ffskt_init(FFSKT_WSA))
+	if (0 != ffskt_init(FFSKT_SIGPIPE | FFSKT_WSA))
 		return NULL;
 
 	serv = ffmem_tcalloc1(fserver);
@@ -371,33 +371,36 @@ static int srv_conf_maxfd(ffparser_schem *ps, fserver *srv, const int64 *val) {
 
 static int srv_getmod(const ffstr *binfn, ffdl *pdl, fsv_getmod_t *getmod)
 {
+	int rc = FFPARS_ESYS;
 	ffdl dl;
-	char fn[FF_MAXPATH];
-	size_t len;
+	char *fn = NULL;
 
 	if (!ffpath_isvalidfn(binfn->ptr, binfn->len, 0))
 		return FFPARS_EBADVAL;
 
-	len = ffs_fmt(fn, fn + FFCNT(fn), "%Smod/%S." FFDL_EXT "%Z"
-		, &serv->rootdir, binfn);
-	if (len == FFCNT(fn))
-		return FFPARS_EBIGVAL;
+	if (NULL == (fn = ffsz_alfmt("%Smod%c%S." FFDL_EXT
+		, &serv->rootdir, FFPATH_SLASH, binfn)))
+		goto err;
 
-	dl = ffdl_open(fn, 0);
+	dl = ffdl_open(fn, FFDL_SELFDIR);
 	if (dl == NULL) {
 		srv_errsave(-1, "open module file: %s: %s", fn, ffdl_errstr());
-		return FFPARS_ESYS;
+		goto err;
 	}
 
 	*getmod = (fsv_getmod_t)ffdl_addr(dl, "fsv_getmod");
 	if (*getmod == NULL) {
 		srv_errsave(-1, "resolve function: fsv_getmod: %s", ffdl_errstr());
 		ffdl_close(dl);
-		return FFPARS_ESYS;
+		goto err;
 	}
 
 	*pdl = dl;
-	return 0;
+	rc = 0;
+
+err:
+	ffmem_safefree(fn);
+	return rc;
 }
 
 static int srv_conf_mod(ffparser_schem *ps, fserver *srv, ffpars_ctx *a)
