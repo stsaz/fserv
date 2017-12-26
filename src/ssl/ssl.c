@@ -49,6 +49,7 @@ typedef struct fsv_sslx {
 	char *hostname;
 	uint protos;
 	uint use_server_cipher;
+	uint sess_cache;
 	uint sess_cache_size;
 
 	int (*onsrvname)(void *);
@@ -139,30 +140,18 @@ static const ffpars_arg ssl_args[] = {
 	{ NULL,	FFPARS_TCLOSE,  FFPARS_DST(&ssl_conf_end) },
 };
 
-static void ssl_err(int lev, const char *func)
+static void ssl_err(int lev, int e)
 {
 	char buf[1024];
-	size_t n = ffssl_errstr(buf, sizeof(buf));
-	errlog1(sslm, lev, "%s() failed: %*s"
-		, func, n, buf);
+	size_t n = ffssl_errstr(e, buf, sizeof(buf));
+	errlog1(sslm, lev, "%*s", n, buf);
 }
 
-static void sslcon_err(int lev, const char *func, int e)
+static void sslcon_err(int lev, int e)
 {
 	char buf[1024];
-	size_t n = 0;
-
-	if (e == SSL_ERROR_SSL)
-		n = ffssl_errstr(buf, sizeof(buf));
-
-	else if (e == SSL_ERROR_SYSCALL) {
-		syserrlog1(sslm, FSV_LOG_ERR, "%s() failed"
-			, func);
-		return;
-	}
-
-	errlog1(sslm, lev, "%s() failed: (%d): %*s"
-		, func, e, n, buf);
+	size_t n = ffssl_errstr(e, buf, sizeof(buf));
+	errlog1(sslm, lev, "%*s", n, buf);
 }
 
 static FFINL void sslx_fin(fsv_sslx *sx)
@@ -193,7 +182,7 @@ static void * sslm_create(const fsv_core *srv, ffpars_ctx *ctx, fsv_modinfo *mod
 
 	fflist_init(&sslm->ctxs);
 	if (0 != (e = ffssl_init())) {
-		errlog1(sslm, FSV_LOG_ERR, ffssl_funcstr[e]);
+		ssl_err(FSV_LOG_ERR, e);
 		goto err;
 	}
 
@@ -235,15 +224,15 @@ static int tls_srvname(SSL *ssl, int *ad, void *arg, void *udata)
 	const char *name;
 	fsv_sslcon *c = udata;
 
-	if (NULL == (name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name)))
-		return SSL_TLSEXT_ERR_NOACK;
+	if (NULL == (name = ffssl_getptr(ssl, FFSSL_HOSTNAME)))
+		return FFSSL_SRVNAME_NOACK;
 
 	dbglog1(c, FSV_LOG_DBGNET, "TLS server name: %s", name);
 
 	if (c->sx->onsrvname != NULL && 0 != c->sx->onsrvname(c->param))
-		return SSL_TLSEXT_ERR_NOACK;
+		return FFSSL_SRVNAME_NOACK;
 
-	return SSL_TLSEXT_ERR_OK;
+	return FFSSL_SRVNAME_OK;
 }
 
 static int ssl_verify_cb(int preverify_ok, X509_STORE_CTX *x509ctx, void *udata)
@@ -251,19 +240,18 @@ static int ssl_verify_cb(int preverify_ok, X509_STORE_CTX *x509ctx, void *udata)
 	fsv_sslcon *c = udata;
 	X509 *cert;
 	int er, depth;
-	char subj[1024], issuer[1024];
+	struct ffssl_cert_info ci;
 
 	er = X509_STORE_CTX_get_error(x509ctx);
 	cert = X509_STORE_CTX_get_current_cert(x509ctx);
 	depth = X509_STORE_CTX_get_error_depth(x509ctx);
 
-	X509_NAME_oneline(X509_get_subject_name(cert), subj, sizeof(subj));
-	X509_NAME_oneline(X509_get_issuer_name(cert), issuer, sizeof(issuer));
+	ffssl_cert_info(cert, &ci);
 
 	dbglog1(c, FSV_LOG_DBGFLOW, "verify: %d, depth: %d.  error: (%d) %s.  Subject: %s.  Issuer: %s."
 		, preverify_ok, depth
-		, er, X509_verify_cert_error_string(er)
-		, subj, issuer);
+		, er, ffssl_cert_verify_errstr(er)
+		, ci.subject, ci.issuer);
 
 	return preverify_ok;
 }
@@ -303,14 +291,7 @@ static int ssl_conf_sesscache(ffparser_schem *ps, fsv_sslx *sx, ffstr *v)
 	ssize_t i = ffs_findarrz(sesscach_str, FFCNT(sesscach_str), v->ptr, v->len);
 	if (i == -1)
 		return FFPARS_EBADVAL;
-
-	if (i == FSV_SSL_SESSCACHE_OFF)
-		SSL_CTX_set_session_cache_mode(sx->sslctx, SSL_SESS_CACHE_OFF);
-	else {
-		int sessid_ctx = 0;
-		SSL_CTX_set_session_id_context(sx->sslctx, (void*)&sessid_ctx, sizeof(int));
-	}
-
+	sx->sess_cache = i;
 	return 0;
 }
 
@@ -340,7 +321,7 @@ static int load_cert(fsv_sslx *sx)
 	}
 
 	if (0 != (e = ffssl_ctx_cert(sx->sslctx, cert, pkey, sx->ciphers.ptr))) {
-		ssl_err(FSV_LOG_ERR, ffssl_funcstr[e]);
+		ssl_err(FSV_LOG_ERR, e);
 		e = FFPARS_EINTL;
 		goto done;
 	}
@@ -372,7 +353,7 @@ static int load_ca(fsv_sslx *sx)
 		return FFPARS_EBADVAL;
 
 	if (0 != (e = ffssl_ctx_ca(sx->sslctx, &ssl_verify_cb, sx->verify_depth, fn))) {
-		ssl_err(FSV_LOG_ERR, ffssl_funcstr[e]);
+		ssl_err(FSV_LOG_ERR, e);
 		e = FFPARS_EINTL;
 		goto done;
 	}
@@ -399,8 +380,10 @@ static int ssl_conf_end(ffparser_schem *ps, fsv_sslx *sx)
 
 	ffssl_ctx_protoallow(sx->sslctx, sx->protos);
 
-	if (sx->sess_cache_size != 0)
-		SSL_CTX_sess_set_cache_size(sx->sslctx, sx->sess_cache_size);
+	if (sx->sess_cache == FSV_SSL_SESSCACHE_OFF)
+		ffssl_ctx_cache(sx->sslctx, -1);
+	else
+		ffssl_ctx_cache(sx->sslctx, sx->sess_cache_size);
 
 	return 0;
 }
@@ -424,12 +407,12 @@ static void* ssl_newctx(ffpars_ctx *args)
 	}
 
 	if (0 != (e = ffssl_ctx_create(&sx->sslctx))) {
-		ssl_err(FSV_LOG_ERR, ffssl_funcstr[e]);
+		ssl_err(FSV_LOG_ERR, e);
 		goto err;
 	}
 
 	if (0 != (e = ffssl_ctx_tls_srvname_set(sx->sslctx, &tls_srvname))) {
-		ssl_err(FSV_LOG_ERR, ffssl_funcstr[e]);
+		ssl_err(FSV_LOG_ERR, e);
 		goto err;
 	}
 
@@ -468,7 +451,7 @@ static fsv_sslcon * ssl_newcon(void *ctx, fsv_ssl_newcon *opts, int flags)
 	sslopt.udata = c;
 	sslopt.iobuf = &c->iobuf;
 	if (0 != (e = ffssl_create(&c->sslcon, sx->sslctx, f | FFSSL_IOBUF, &sslopt))) {
-		ssl_err(FSV_LOG_ERR, ffssl_funcstr[e]);
+		ssl_err(FSV_LOG_ERR, e);
 		goto fail;
 	}
 
@@ -513,7 +496,7 @@ static int ssl_shut(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len)
 			return FSV_SSL_WANTWRITE;
 		}
 
-		sslcon_err(FSV_LOG_ERR, "ffssl_shut", e);
+		sslcon_err(FSV_LOG_ERR, e);
 		return FSV_SSL_ERR;
 	}
 
@@ -524,7 +507,7 @@ static int ssl_fin(fsv_sslcon *c)
 {
 	dbglog1(c, FSV_LOG_DBGFLOW
 		, "finish SSL connection: read:%U, written:%U, renegotiations:%u"
-		, c->allin, c->allout, SSL_num_renegotiations(c->sslcon));
+		, c->allin, c->allout, (int)ffssl_get(c->sslcon, FFSSL_NUM_RENEGOTIATIONS));
 
 	ffssl_free(c->sslcon);
 	ffmem_free(c);
@@ -545,9 +528,6 @@ static void ssl_iolog(fsv_sslcon *c, size_t len)
 	}
 
 	c->wantop = 0;
-
-	if (len == 0)
-		return;
 }
 
 static void ssl_aio(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len, int r)
@@ -586,24 +566,19 @@ static int ssl_handshake(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len)
 			return FSV_SSL_WANTWRITE;
 		}
 
-		sslcon_err(FSV_LOG_ERR, "ffssl_handshake", e);
+		sslcon_err(FSV_LOG_ERR, e);
 		return -1;
 	}
 
-	if (fsv_log_checkdbglevel(sslm->logctx, FSV_LOG_DBGNET)) {
-		const char *cipher, *ver;
-
-		cipher = SSL_get_cipher_name(c->sslcon);
-		ver = SSL_get_version(c->sslcon);
-
-		dbglog1(c, FSV_LOG_DBGNET, "handshake done.  proto: %s, cipher: %s, reused session: %d."
-			, ver, cipher, (int)SSL_session_reused(c->sslcon));
-	}
+	dbglog1(c, FSV_LOG_DBGNET, "handshake done.  proto: %s, cipher: %s, reused session: %d."
+		, ffssl_getptr(c->sslcon, FFSSL_VERSION)
+		, ffssl_getptr(c->sslcon, FFSSL_CIPHER_NAME)
+		, (int)ffssl_get(c->sslcon, FFSSL_SESS_REUSED));
 
 	if (c->sx->verify == FSV_SSL_VERF_ON) {
-		if (X509_V_OK != SSL_get_verify_result(c->sslcon)) {
+		if (X509_V_OK != ffssl_get(c->sslcon, FFSSL_CERT_VERIFY_RESULT)) {
 			errlog1(sslm, FSV_LOG_ERR, "failed to verify peer certificate");
-			SSL_CTX_remove_session(c->sx->sslctx, SSL_get_session(c->sslcon));
+			ffssl_ctx_sess_del(c->sx->sslctx, c->sslcon);
 			return -1;
 		}
 	}
@@ -642,7 +617,7 @@ static ssize_t ssl_recv(fsv_sslcon *c, void *buf, size_t size, void **sslbuf, ss
 			return FSV_SSL_WANTWRITE;
 		}
 
-		sslcon_err(FSV_LOG_ERR, "ffssl_read", r);
+		sslcon_err(FSV_LOG_ERR, r);
 		return FSV_SSL_ERR;
 	}
 	return r;
@@ -679,7 +654,7 @@ static ssize_t ssl_sendfile(fsv_sslcon *c, ffsf *sf, void **sslbuf, ssize_t *ssl
 			return FSV_SSL_WANTREAD;
 		}
 
-		sslcon_err(FSV_LOG_ERR, "ffssl_write", r);
+		sslcon_err(FSV_LOG_ERR, r);
 		return FSV_SSL_ERR;
 	}
 
@@ -693,7 +668,7 @@ static ssize_t ssl_getvar(fsv_sslcon *c, const char *name, size_t namelen, void 
 		return 1;
 
 	} else if (ffs_eqcz(name, namelen, "ssl_servername")) {
-		const char *name = SSL_get_servername(c->sslcon, TLSEXT_NAMETYPE_host_name);
+		const char *name = ffssl_getptr(c->sslcon, FFSSL_HOSTNAME);
 		if (name == NULL)
 			return -1;
 
