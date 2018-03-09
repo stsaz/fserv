@@ -61,7 +61,6 @@ struct fsv_sslcon {
 	fsv_logctx *logctx;
 
 	void *param;
-	ffssl_iobuf iobuf;
 	uint64 allin
 		, allout;
 	int wantop;
@@ -435,7 +434,6 @@ static fsv_sslcon * ssl_newcon(void *ctx, fsv_ssl_newcon *opts, int flags)
 	else
 		sslopt.tls_hostname = c->sx->hostname;
 	sslopt.udata = c;
-	sslopt.iobuf = &c->iobuf;
 	if (0 != (e = ffssl_create(&c->sslcon, sx->sslctx, f | FFSSL_IOBUF, &sslopt))) {
 		ssl_err(FSV_LOG_ERR, e);
 		goto fail;
@@ -458,17 +456,19 @@ static int ssl_shut(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len)
 		c->shut_actv = 1;
 		dbglog1(c, FSV_LOG_DBGNET, "performing shutdown...");
 
-		c->iobuf.len = -1;
+		ffssl_input(c->sslcon, (size_t)-1);
 		c->wantop = 0;
 	}
 
 	if (*sslbuf_len != -1) {
-		c->iobuf.len = *sslbuf_len;
+		ffssl_input(c->sslcon, *sslbuf_len);
 		ssl_iolog(c, *sslbuf_len);
 
 	} else if (c->wantop != 0) {
-		*sslbuf = c->iobuf.ptr;
-		*sslbuf_len = c->iobuf.len;
+		ffstr s;
+		ffssl_iobuf(c->sslcon, &s);
+		*sslbuf = s.ptr;
+		*sslbuf_len = s.len;
 		return c->wantop;
 	}
 
@@ -518,8 +518,10 @@ static void ssl_iolog(fsv_sslcon *c, size_t len)
 
 static void ssl_aio(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len, int r)
 {
-	*sslbuf = c->iobuf.ptr;
-	*sslbuf_len = c->iobuf.len;
+	ffstr s;
+	ffssl_iobuf(c->sslcon, &s);
+	*sslbuf = s.ptr;
+	*sslbuf_len = s.len;
 	c->wantop = (r == FFSSL_WANTREAD) ? FSV_SSL_WANTREAD : FSV_SSL_WANTWRITE;
 }
 
@@ -528,12 +530,14 @@ static int ssl_handshake(fsv_sslcon *c, void **sslbuf, ssize_t *sslbuf_len)
 	int e;
 
 	if (*sslbuf_len != -1) {
-		c->iobuf.len = *sslbuf_len;
+		ffssl_input(c->sslcon, *sslbuf_len);
 		ssl_iolog(c, *sslbuf_len);
 
 	} else if (c->wantop != 0) {
-		*sslbuf = c->iobuf.ptr;
-		*sslbuf_len = c->iobuf.len;
+		ffstr s;
+		ffssl_iobuf(c->sslcon, &s);
+		*sslbuf = s.ptr;
+		*sslbuf_len = s.len;
 		return c->wantop;
 	}
 
@@ -581,12 +585,14 @@ static ssize_t ssl_recv(fsv_sslcon *c, void *buf, size_t size, void **sslbuf, ss
 	int r;
 
 	if (*sslbuf_len != -1) {
-		c->iobuf.len = *sslbuf_len;
+		ffssl_input(c->sslcon, *sslbuf_len);
 		ssl_iolog(c, *sslbuf_len);
 
 	} else if (c->wantop != 0) {
-		*sslbuf = c->iobuf.ptr;
-		*sslbuf_len = c->iobuf.len;
+		ffstr s;
+		ffssl_iobuf(c->sslcon, &s);
+		*sslbuf = s.ptr;
+		*sslbuf_len = s.len;
 		return c->wantop;
 	}
 
@@ -615,12 +621,14 @@ static ssize_t ssl_sendfile(fsv_sslcon *c, ffsf *sf, void **sslbuf, ssize_t *ssl
 	ffstr dat;
 
 	if (*sslbuf_len != -1) {
-		c->iobuf.len = *sslbuf_len;
+		ffssl_input(c->sslcon, *sslbuf_len);
 		ssl_iolog(c, *sslbuf_len);
 
 	} else if (c->wantop != 0) {
-		*sslbuf = c->iobuf.ptr;
-		*sslbuf_len = c->iobuf.len;
+		ffstr s;
+		ffssl_iobuf(c->sslcon, &s);
+		*sslbuf = s.ptr;
+		*sslbuf_len = s.len;
 		return c->wantop;
 	}
 
