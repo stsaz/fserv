@@ -125,7 +125,7 @@ static int setroot(const fsv_main *fsv, const char *argv0)
 static int args_parse(cmdline *opts, const char **argv, int argc)
 {
 	int r, i;
-	ffparser p;
+	ffpsarg_parser p;
 	ffparser_schem ps;
 	const ffpars_ctx ctx = { opts, args, FFCNT(args), NULL };
 
@@ -152,7 +152,7 @@ end:
 			, (int)p.line, &p.val, ffpars_schemerrstr(&ps, r, NULL, 0), fferr_last());
 	}
 
-	ffpars_free(&p);
+	ffpsarg_parseclose(&p);
 	ffpars_schemfree(&ps);
 	return r;
 }

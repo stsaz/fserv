@@ -160,7 +160,7 @@ ifneq ($(OS),win)
 else #windows:
 	$(CP) $(BIN) $(RUNDIR)/
 	$(CP) $(PROJDIR)/build/*_fserv.cmd $(RUNDIR)/
-	$(CP) $(FF3PTLIB)/ssleay32.dll $(FF3PTLIB)/libeay32.dll \
+	$(CP) $(FF3PTLIB)/libcrypto.dll $(FF3PTLIB)/libssl.dll \
 		$(RUNDIR)/mod/
 
 endif

@@ -283,7 +283,7 @@ static const ffpars_arg srv_args[] = {
 static int srv_readconf(const char *fn)
 {
 	int r;
-	ffparser pconf;
+	ffconf pconf;
 	ffparser_schem ps;
 	const ffpars_ctx ctx = { serv, srv_args, FFCNT(srv_args), NULL, {0} };
 
@@ -294,7 +294,7 @@ static int srv_readconf(const char *fn)
 
 	r = srv_conf(fn, &ps);
 
-	ffpars_free(&pconf);
+	ffconf_parseclose(&pconf);
 	ffpars_schemfree(&ps);
 	return r;
 }
@@ -817,8 +817,8 @@ static int srv_confinclude_wild(ffparser_schem *ps, const ffstr *val)
 
 static int srv_confinclude(ffparser_schem *ps, const char *fn)
 {
-	ffparser conf;
-	ffparser *old;
+	ffconf conf;
+	ffconf *old;
 	int rc;
 	ffconf_parseinit(&conf);
 	old = ps->p;
@@ -826,7 +826,7 @@ static int srv_confinclude(ffparser_schem *ps, const char *fn)
 	rc = srv_conf(fn, ps);
 	ps->p = old;
 
-	ffpars_free(&conf);
+	ffconf_parseclose(&conf);
 	return rc;
 }
 
@@ -877,14 +877,14 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 					goto err;
 				}
 
-				r = srv_confinclude_wild(ps, &ps->p->val);
+				r = srv_confinclude_wild(ps, &((ffconf*)ps->p)->val);
 				if (r != 0)
 					goto err;
 
 				continue;
 			}
 
-			if (r == FFPARS_KEY && ffstr_ieqcz(&ps->p->val, "include")) {
+			if (r == FFPARS_KEY && ffstr_ieqcz(&((ffconf*)ps->p)->val, "include")) {
 				include = 1;
 				continue;
 			}
@@ -906,12 +906,13 @@ static int srv_conf(const char *filename, ffparser_schem *ps)
 
 err:
 	if (ffpars_iserr(r)) {
+		ffconf *pconf = ps->p;
 		const char *ser = ffpars_schemerrstr(ps, r, NULL, 0);
 		srv_errsave(r == FFPARS_ESYS ? fferr_last() : -1
 			, "parse config: %s: %u:%u: near \"%S\": \"%s\": %s"
 			, filename
-			, (int)ps->p->line, (int)ps->p->ch
-			, &ps->p->val, (ps->curarg != NULL) ? ps->curarg->name : ""
+			, (int)pconf->line, (int)pconf->ch
+			, &pconf->val, (ps->curarg != NULL) ? ps->curarg->name : ""
 			, ser);
 		goto fail;
 	}

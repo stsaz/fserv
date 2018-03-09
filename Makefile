@@ -33,12 +33,7 @@ override LDFLAGS += \
 	-L$(FF3PTLIB) $(LD_LWS2_32)
 
 # 3-party libraries
-ifneq ($(OS),win)
 SSL_LIBS := -lcrypto -lssl
-
-else
-SSL_LIBS := -lssleay32 -leay32
-endif
 
 include $(PROJDIR)/makerules
 

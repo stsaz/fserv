@@ -156,7 +156,7 @@ static int stfl_mime_conf_add(ffparser_schem *ps, void *unused, const ffstr *ext
 	char *ar;
 	size_t newcap;
 
-	if (ps->p->type == FFCONF_TKEY) {
+	if (((ffconf*)ps->p)->type == FFCONF_TKEY) {
 		// append mime type into array
 		const ffstr *mime = ext;
 		if (NULL == ffarr_grow(&stflm->mime_types, mime->len + 1, FFARR_GROWQUARTER))
