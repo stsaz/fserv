@@ -126,7 +126,7 @@ void http_get_def_respfilts(const http_submod **sm, size_t *n)
 static void http_resettimer(httpcon *c, int t)
 {
 	int val = 0;
-	uint tmr_when;
+	time_t tmr_when;
 
 	if (c->tmr_flags & t)
 		return;
@@ -138,7 +138,7 @@ static void http_resettimer(httpcon *c, int t)
 	else if (t & TMR_WRITE)
 		val = c->host->write_tmout;
 
-	tmr_when = httpm->core->fsv_gettime().s + val;
+	tmr_when = httpm->core->fsv_gettime().sec + val;
 	if (tmr_when <= c->tmr_when)
 		return;
 

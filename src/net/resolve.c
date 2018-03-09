@@ -305,7 +305,7 @@ static int resvm_sig(int signo)
 
 static int resvm_start()
 {
-	ffrnd_seed(resvm->core->fsv_gettime().s);
+	ffrnd_seed(resvm->core->fsv_gettime().sec);
 	resvm->kq = resvm->core->conf()->queue;
 
 	{

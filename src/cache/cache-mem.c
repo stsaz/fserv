@@ -63,7 +63,7 @@ typedef struct cach_item {
 	ffstr data;
 	char data_s[DATA_S_SIZE]; //static data, saves the call to mem_alloc()
 
-	uint cretime; //the time when the item was stored
+	time_t cretime; //the time when the item was stored
 	uint usage; //the number of external references
 	unsigned unlinked :1; //set when the item is no longer referenced by the cache
 	fsv_timer tmr; //expiration timer
@@ -480,8 +480,8 @@ static int cach_fetch(fsv_cachectx *fcx, fsv_cacheitem *ca, int flags)
 	cach_fillitem(ca, cit);
 
 	fsv_dbglog(logctx, FSV_LOG_DBGFLOW, CACH_MODNAME, &cx->name
-		, "fetch: \"%*s\"; age: %us; data size: %L; usage: %u"
-		, cit->ckey->len, cit->ckey->d, cachm->srv->fsv_gettime().s - cit->cretime
+		, "fetch: \"%*s\"; age: %Us; data size: %L; usage: %u"
+		, cit->ckey->len, cit->ckey->d, cachm->srv->fsv_gettime().sec - cit->cretime
 		, cit->data.len, cit->usage);
 
 	return FSV_CACH_OK;
@@ -625,7 +625,7 @@ static int cach_store(fsv_cachectx *fcx, fsv_cacheitem *ca, int flags)
 	cx->memsize += cit->data.len;
 	ca->expire = cach_tmrreset(cit, ca->expire);
 	fflist_ins(&cx->lastused, &cit->lastused_li);
-	cit->cretime = cachm->srv->fsv_gettime().s;
+	cit->cretime = cachm->srv->fsv_gettime().sec;
 
 	fsv_dbglog(logctx, FSV_LOG_DBGFLOW, CACH_MODNAME, &cx->name
 		, "store: \"%*s\"; max-age: %us; data size: %L; usage: %u;  [%L]"
@@ -784,9 +784,9 @@ static void cach_rlz(cach_item *cit, fsv_logctx *logctx)
 	cit->unlinked = 1;
 
 	fsv_dbglog(logctx, FSV_LOG_DBGFLOW, CACH_MODNAME, &cit->cx->name
-		, "%s: \"%*s\"; age: %us;  [%L]"
+		, "%s: \"%*s\"; age: %Us;  [%L]"
 		, ((cit->usage == 0) ? "deleted" : "unlinked"), cit->ckey->len, cit->ckey->d
-		, cachm->srv->fsv_gettime().s - cit->cretime, cit->cx->items.len);
+		, cachm->srv->fsv_gettime().sec - cit->cretime, cit->cx->items.len);
 
 	if (cit->usage == 0)
 		cach_fin(cit);

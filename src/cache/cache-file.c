@@ -49,7 +49,7 @@ typedef struct fcache_hdr {
 	ushort uhdr_len;
 	uint fdoff;
 
-	uint expire_tm //when a file is considered stale
+	time_t expire_tm //when a file is considered stale
 		, creat_tm; //when a file was created
 
 	char key[0];
@@ -131,7 +131,7 @@ static int fcach_getfn(fcache *c, uint *hash, ffstr *fn);
 static int fcach_parsehdr(fcache *c, fffd fhdr, fsv_logctx *logctx);
 static int fcach_writehdr(fcache *c, fffd fhdr, fsv_fcacheitem *ca);
 
-static FFINL void fcach_setexpire(fcache *c, uint expire) {
+static FFINL void fcach_setexpire(fcache *c, time_t expire) {
 	c->h->expire_tm = (expire != 0) ? expire : fcachm->core->fsv_gettime().sec + c->cx->def_expiry;
 }
 
@@ -317,7 +317,7 @@ static int fcach_writehdr(fcache *c, fffd fd, fsv_fcacheitem *ca)
 	c->h = (fcache_hdr*)c->hdr.ptr;
 	c->h->flags = HDR_INCOMPLETE;
 	fcach_setexpire(c, ca->expire);
-	c->h->creat_tm = fcachm->core->fsv_gettime().s;
+	c->h->creat_tm = fcachm->core->fsv_gettime().sec;
 
 	ffmemcpy(c->h->key, ca->key, ca->keylen);
 	c->h->keylen = (ushort)ca->keylen;
@@ -593,8 +593,8 @@ static int fcach_fetch(fsv_cachectx *_cx, fsv_fcacheitem *ca, int flags)
 	fcach_finfile(c, logctx);
 
 done:
-	dbglog(logctx, "fetch: \"%*s\"; age: %us; data size: %U; filename: %S"
-		, (size_t)c->h->keylen, c->h->key, fcachm->core->fsv_gettime().s - c->h->creat_tm, c->size, &fn);
+	dbglog(logctx, "fetch: \"%*s\"; age: %Us; data size: %U; filename: %S"
+		, (size_t)c->h->keylen, c->h->key, fcachm->core->fsv_gettime().sec - c->h->creat_tm, c->size, &fn);
 
 	fcach_fill(c, ca);
 	ffstr_free(&fn);
@@ -699,8 +699,8 @@ static int fcach_store(fsv_cachectx *_cx, fsv_fcacheitem *ca, int flags)
 	if (flags & FSV_FCACH_LOCK)
 		c->locked = 1;
 
-	dbglog(logctx, "store: \"%*s\"; max-age: %ds; data size: %U; filename: %S"
-		, (size_t)c->h->keylen, c->h->key, c->h->expire_tm - fcachm->core->fsv_gettime().s, ca->len, &fn);
+	dbglog(logctx, "store: \"%*s\"; max-age: %Ds; data size: %U; filename: %S"
+		, (size_t)c->h->keylen, c->h->key, c->h->expire_tm - fcachm->core->fsv_gettime().sec, ca->len, &fn);
 	ffstr_free(&fn);
 
 	if (cx->bufsize != 0 && NULL == ffarr_alloc(&c->buf, cx->bufsize)) {

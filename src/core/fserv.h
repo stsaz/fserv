@@ -329,8 +329,8 @@ typedef struct fsv_fcacheitem {
 	const void *hdr;
 
 	uint64 total_size; //[in] reserve disk space
-	uint expire; //expiration time. 0 - default
-	uint cretm; //[out] creation time
+	time_t expire; //expiration time. 0 - default
+	time_t cretm; //[out] creation time
 } fsv_fcacheitem;
 
 static FFINL void fsv_fcache_init(fsv_fcacheitem *fca) {

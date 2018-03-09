@@ -138,7 +138,7 @@ struct httpcon {
 	ffstr sid;
 
 	fsv_timer tmr;
-	uint tmr_when;
+	time_t tmr_when;
 	uint tmr_flags;
 
 	ffchain filters;

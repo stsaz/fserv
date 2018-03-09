@@ -191,7 +191,7 @@ static const char *const stmr[] = { "read", "write" };
 static void htpx_resettimer(htpxcon *c, int t)
 {
 	int val = 0;
-	uint tmr_when;
+	time_t tmr_when;
 
 	if (c->tmr_flags & t)
 		return;
@@ -201,7 +201,7 @@ static void htpx_resettimer(htpxcon *c, int t)
 	else if (t & HTPX_TMR_WRITE)
 		val = c->px->write_timeout;
 
-	tmr_when = htpxm->core->fsv_gettime().s + val;
+	tmr_when = htpxm->core->fsv_gettime().sec + val;
 	if (tmr_when <= c->tmr_when)
 		return;
 

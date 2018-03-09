@@ -30,7 +30,7 @@ typedef struct conn_serv {
 	ffstr surl;
 	ffurl parsed_url;
 	byte weight;
-	uint down_until; //recheck the down server at this time.  UNIX timestamp.
+	time_t down_until; //recheck the down server at this time.  UNIX timestamp.
 
 	unsigned dynamic_url :1; //'surl' contains $vars
 
@@ -1234,7 +1234,7 @@ static void conx_serv_mark_down(fsv_conctx *cx, conn_serv *cs)
 	if (cs->dynamic_url)
 		return;
 
-	cs->down_until = conm->core->fsv_gettime().s + cx->down_time;
+	cs->down_until = conm->core->fsv_gettime().sec + cx->down_time;
 	errlog(conm->logctx, FSV_LOG_ERR, "%S: marked server as 'down'", &cs->surl);
 }
 
@@ -1267,7 +1267,7 @@ static conn_serv * conx_getserv(fsv_conctx *cx, conn_serv *cur, conn_serv *first
 			break;
 		}
 
-		if (cs->down_until <= conm->core->fsv_gettime().s) {
+		if (cs->down_until <= conm->core->fsv_gettime().sec) {
 			dbglog(logctx, FSV_LOG_DBGFLOW, "recheck upstream server %S", &cs->surl);
 			cs->down_until = 0;
 			break;

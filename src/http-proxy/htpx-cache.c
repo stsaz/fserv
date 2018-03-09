@@ -19,7 +19,7 @@ struct htcache {
 	ffstr key;
 	fsv_fcacheitem ca;
 
-	uint expires_at;
+	time_t expires_at;
 	ffstr lastmod
 		, etag;
 
@@ -208,7 +208,7 @@ static void htcache_resp_ondata(fsv_httphandler *h)
 
 		if (c->must_revalidate && c->con->resp.code == 304 && c->ca.id != NULL) {
 			//the document in cache is still valid
-			if (c->ca.expire <= htpxm->core->fsv_gettime().s
+			if (c->ca.expire <= htpxm->core->fsv_gettime().sec
 				&& 0 != htcache_refreshdoc(c))
 				goto err;
 
@@ -369,7 +369,7 @@ static int htcache_getexpire(htcache *c, const ffhttp_response *resp)
 	}
 
 	if (maxag != (uint)-1)
-		c->expires_at = htpxm->core->fsv_gettime().s + maxag;
+		c->expires_at = htpxm->core->fsv_gettime().sec + maxag;
 
 	if (((fcc & FFHTTP_CACH_NOSTORE) && !(c->cx->opts & HTPX_IGN_NOSTORE))
 		|| ((fcc & FFHTTP_CACH_PRIVATE) && !(c->cx->opts & HTPX_IGN_PRIVATE)))
@@ -501,7 +501,7 @@ static ffbool htcache_getkey(htpx_cach_ctx *cx, const ffhttp_request *req, ffstr
 static int htcache_fetch(htcache *c, const ffhttp_request *req)
 {
 	fsv_fcacheitem *ca = &c->ca;
-	uint now;
+	time_t now;
 
 	if (!htcache_getkey(c->cx, req, &c->key)) {
 		c->cacheable = 0;
@@ -516,7 +516,7 @@ static int htcache_fetch(htcache *c, const ffhttp_request *req)
 	if (0 != c->cx->cache->fetch(c->cx->cachectx, ca, 0))
 		return 1;
 
-	now = htpxm->core->fsv_gettime().s;
+	now = htpxm->core->fsv_gettime().sec;
 	if (!c->must_revalidate
 		&& (ca->expire <= now
 			|| (c->req_maxage != -1 && (uint)c->req_maxage < now - ca->cretm)))
