@@ -28,7 +28,7 @@ static fsv_log fsv_log_iface = {
 // MOD
 static int logm_start();
 static void logm_flush();
-static void logm_flushtimer(const fftime *now, void *param) {
+static void logm_flushtimer(void *param) {
 	logm_flush();
 }
 

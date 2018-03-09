@@ -156,7 +156,7 @@ static int resv_rmuser(resolver *r, const ffstr *host, fsv_resolv_cb ondone, voi
 static size_t resv_prepquery(char *buf, size_t cap, uint txid, const ffstr *nm, int type);
 static void resv_sendquery(dns_query *q, int resend);
 static int resv_sendquery1(dns_query *q, dns_serv *serv, int resend);
-static void resv_onexpire(const fftime *now, void *param);
+static void resv_onexpire(void *param);
 static void resv_notifyfin(dns_query *q, int status);
 static void resv_finquery(dns_query *q);
 
@@ -482,7 +482,7 @@ static void resv_unref(const ffaddrinfo *ai)
 
 
 /** Timer expired. */
-static void resv_onexpire(const fftime *now, void *param)
+static void resv_onexpire(void *param)
 {
 	dns_query *q = param;
 

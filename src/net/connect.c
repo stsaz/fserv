@@ -188,7 +188,7 @@ static void conn_connectnextaddr(fsv_conn *c);
 static void conn_connectaddr(fsv_conn *c, ffaddr *adr);
 static void conn_onconnect(void *udata);
 static void conn_resettimer(fsv_conn *c, uint t);
-static void conn_onexpire(const fftime *now, void *param);
+static void conn_onexpire(void *param);
 static void conn_notify(fsv_conn *c, int result);
 static void conn_recycle(fsv_conn *c);
 static void conn_fin(fsv_conn *c);
@@ -1003,7 +1003,7 @@ static int conn_disconnect(fsv_conn *c, int flags)
 }
 
 /** I/O operation timed out. */
-static void conn_onexpire(const fftime *now, void *param)
+static void conn_onexpire(void *param)
 {
 	fsv_conn *c = param;
 	dbglog(c->logctx, FSV_LOG_DBGNET, "timer expired");

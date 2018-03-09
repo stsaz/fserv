@@ -34,7 +34,7 @@ static int logf_openfile(logfile *lf);
 static int logf_close(logfile *lf);
 static int logf_fwrite(logfile *lf, const char *src, size_t len);
 static void logf_flush(logfile *lf);
-static void logf_rotate(const fftime *now, void *param);
+static void logf_rotate(void *param);
 
 
 static const ffpars_arg logf_args[] = {
@@ -179,7 +179,7 @@ static void logf_flush(logfile *lf)
 }
 
 // /logdir/filename.log -> /logdir/filename.log.20010101-234537
-static void logf_rotate(const fftime *now, void *param)
+static void logf_rotate(void *param)
 {
 	logfile *lf = (logfile*)param;
 	char fn[FF_MAXPATH];

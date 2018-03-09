@@ -127,7 +127,7 @@ static int lsnx_conf_ssl(ffparser_schem *ps, lisnctx *lx, const ffstr *s);
 
 static int lsnm_start(void);
 static int lsnm_stop(void);
-static void lsnm_process_queued_cons(const fftime *now, void *param);
+static void lsnm_process_queued_cons(void *param);
 
 static int lsnx_start(lisnctx *lx);
 static void lsnx_fin(lisnctx *lx);
@@ -139,7 +139,7 @@ static int lsn_addrstr(fsv_lsncon *c, ffaddr *a, ffstr *dst, int flags);
 static void lsn_fincon(fsv_lsncon *c);
 static void lsn_recycle(fsv_lsncon *c);
 static void lsn_linger(void *udata);
-static void lsn_onexpire(const fftime *now, void *param);
+static void lsn_onexpire(void *param);
 static void lsn_callmod(fsv_lsncon *c);
 static void lsn_resettimer(fsv_lsncon *c, uint t);
 
@@ -471,7 +471,7 @@ static void lsn_linger(void *udata)
 	}
 }
 
-static void lsn_onexpire(const fftime *now, void *param)
+static void lsn_onexpire(void *param)
 {
 	fsv_lsncon *c = param;
 	lx_dbglog(c->lx, FSV_LOG_DBGNET, "%S: timer expired", &c->saddr_peer);
@@ -606,7 +606,7 @@ static void lsn_callmod(fsv_lsncon *c)
 }
 
 /** Process queued inbound connections. */
-static void lsnm_process_queued_cons(const fftime *now, void *param)
+static void lsnm_process_queued_cons(void *param)
 {
 	lisnctx *lx;
 	FFLIST_WALK(&lsnm->ctxs, lx, sib) {

@@ -67,7 +67,7 @@ static int htpx_conf_reqhdrs_item(ffparser_schem *ps, htpxctx *px, const ffstr *
 static int htpx_conf_resphdrs_item(ffparser_schem *ps, htpxctx *px, const ffstr *val);
 static int htpx_conf_end(ffparser_schem *ps, htpxctx *px);
 
-static void htpx_statustimer(const fftime *now, void *param);
+static void htpx_statustimer(void *param);
 static void * htpx_newcon(fsv_httphandler *h);
 static int htpx_connect_allowed(fsv_httphandler *h);
 
@@ -394,7 +394,7 @@ static void htpxm_status(const fsv_status *statusmod)
 	ffjson_cookfin(&status_json);
 }
 
-static void htpx_statustimer(const fftime *now, void *param)
+static void htpx_statustimer(void *param)
 {
 	htpxm->write_bps = ffatom_swap(&htpxm->allwritten, 0);
 	htpxm->read_bps = ffatom_swap(&htpxm->allread, 0);

@@ -157,7 +157,7 @@ static FFINL void srv_errclear(void) {
 }
 static void srv_errsave(int syser, const char *fmt, ...);
 
-static void curtime_update(const fftime *now, void *param);
+static void curtime_update(void *param);
 static uint curtime_get(curtime_t *tt, fftime *t, ffdtm *dt, char *dst, size_t cap, uint flags);
 
 
@@ -165,6 +165,7 @@ static void * srv_create(void)
 {
 	if (0 != ffskt_init(FFSKT_SIGPIPE | FFSKT_WSA))
 		return NULL;
+	fftime_init();
 
 	serv = ffmem_tcalloc1(fserver);
 	if (serv == NULL)
@@ -1093,12 +1094,14 @@ static void srv_destroymods(void)
 	}
 }
 
-static void curtime_update(const fftime *now, void *param)
+static void curtime_update(void *param)
 {
 	curtime_t *ct = (curtime_t*)param;
 
-	if (0 != fftime_cmp(now, &ct->time)) {
-		ct->time = *now;
+	fftime now;
+	fftime_now(&now);
+	if (0 != fftime_cmp(&now, &ct->time)) {
+		ct->time = now;
 		ct->flags = 0;
 	}
 }

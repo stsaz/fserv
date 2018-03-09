@@ -89,7 +89,7 @@ static const fsv_log http_log = {
 };
 
 static void http_prepare(httpcon *c);
-static void http_statustimer(const fftime *now, void *param);
+static void http_statustimer(void *param);
 static int http_hstvar_init(void);
 static ssize_t http_getvar_hdr(httpcon *c, const ffstr *nm, void *dst);
 
@@ -675,7 +675,7 @@ static void http_status(const fsv_status *statusmod)
 	ffjson_cookfin(&status_json);
 }
 
-static void http_statustimer(const fftime *now, void *param)
+static void http_statustimer(void *param)
 {
 	httpm->write_bps = ffatom_swap(&httpm->allwritten, 0);
 	httpm->read_bps = ffatom_swap(&httpm->allread, 0);

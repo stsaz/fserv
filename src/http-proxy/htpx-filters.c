@@ -24,7 +24,7 @@ send-io -> http-out
 
 static void htpx_resettimer(htpxcon *c, int val);
 static void htpx_stoptimer(htpxcon *c, int t);
-static void htpx_onexpire(const fftime *now, void *tag);
+static void htpx_onexpire(void *tag);
 
 static void htpx_connect(fsv_httphandler *h);
 static void htpx_connect_done(fsv_httphandler *h);
@@ -230,7 +230,7 @@ static void htpx_stoptimer(htpxcon *c, int t)
 	htpxm->core->fsv_timerstop(&c->tmr);
 }
 
-static void htpx_onexpire(const fftime *now, void *tag)
+static void htpx_onexpire(void *tag)
 {
 	htpxcon *c = tag;
 	c->tmr_when = 0;

@@ -43,7 +43,7 @@ enum {
 	, CONN_KA_EXPIRED
 };
 
-static void test_conn_katimer(const fftime *now, void *param)
+static void test_conn_katimer(void *param)
 {
 	tester *t = param;
 	FFTEST_FUNC;

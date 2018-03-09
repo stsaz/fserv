@@ -14,7 +14,7 @@ req-body <-> (main-handler)|errdoc <-> gz <-> cont-len|chunked <-> make-resp <->
 
 static void http_resettimer(httpcon *c, int t);
 static void http_stoptimer(httpcon *c, int t);
-static void http_onexpire(const fftime *now, void *udata);
+static void http_onexpire(void *udata);
 
 static void http_reqrecv(fsv_httphandler *h);
 static void http_reqrecv_ondone(fsv_httphandler *h);
@@ -167,7 +167,7 @@ static void http_stoptimer(httpcon *c, int t)
 	httpm->core->fsv_timerstop(&c->tmr);
 }
 
-static void http_onexpire(const fftime *now, void *udata)
+static void http_onexpire(void *udata)
 {
 	httpcon *c = udata;
 	c->tmr_when = 0;

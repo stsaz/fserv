@@ -109,7 +109,7 @@ static int cach_rm1(cachectx *cx, fsv_logctx *logctx);
 static int cach_copydata(cach_item *cit, fsv_cacheitem *ca);
 static void cach_fin(cach_item *cit);
 static void cach_destroy(cach_item *cit);
-static void cach_onexpire(const fftime *now, void *param);
+static void cach_onexpire(void *param);
 static uint cach_tmrreset(cach_item *cit, uint expire);
 static void cach_rlz(cach_item *cit, fsv_logctx *logctx);
 static void cach_fillitem(fsv_cacheitem *ca, cach_item *cit);
@@ -743,7 +743,7 @@ static int cach_unref(fsv_cacheitem *ca, int flags)
 }
 
 /** Timer expired. */
-static void cach_onexpire(const fftime *now, void *param)
+static void cach_onexpire(void *param)
 {
 	cach_item *cit = param;
 	cach_rlz(cit, cachm->logctx);
