@@ -115,7 +115,6 @@ const fsv_mod * fsv_getmod(const char *name)
 	return NULL;
 }
 
-static int load_cert(fsv_sslx *sx);
 static int load_ca(fsv_sslx *sx);
 static int ssl_verify_cb(int preverify_ok, X509_STORE_CTX *x509ctx, void *udata);
 static int tls_srvname(SSL *ssl, int *ad, void *arg, void *udata);
@@ -309,36 +308,6 @@ static int ssl_conf_protos(ffparser_schem *ps, fsv_sslx *sx, ffstr *v)
 	return 0;
 }
 
-static int load_cert(fsv_sslx *sx)
-{
-	char *cert = NULL, *pkey = NULL;
-	int e;
-
-	if (NULL == (cert = sslm->srv->getpath(NULL, NULL, sx->cert_fn.ptr, sx->cert_fn.len))
-		|| NULL == (pkey = sslm->srv->getpath(NULL, NULL, sx->pkey_fn.ptr, sx->pkey_fn.len))) {
-		e = FFPARS_EBADVAL;
-		goto done;
-	}
-
-	if (0 != (e = ffssl_ctx_cert(sx->sslctx, cert, pkey, sx->ciphers.ptr))) {
-		ssl_err(FSV_LOG_ERR, e);
-		e = FFPARS_EINTL;
-		goto done;
-	}
-
-	if (sx->use_server_cipher)
-		SSL_CTX_set_options(sx->sslctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-
-	e = 0;
-
-done:
-	ffmem_safefree(cert);
-	ffmem_safefree(pkey);
-	ffstr_free(&sx->pkey_fn);
-	ffstr_free(&sx->cert_fn);
-	return e;
-}
-
 static int load_ca(fsv_sslx *sx)
 {
 	char *fn;
@@ -368,24 +337,46 @@ done:
 
 static int ssl_conf_end(ffparser_schem *ps, fsv_sslx *sx)
 {
-	int r;
+	int r, e;
+	struct ffssl_ctx_conf sslconf = {};
 
-	if (0 != (r = load_cert(sx)))
-		return r;
-
-	if (sx->verify != FSV_SSL_VERF_OFF) {
-		if (0 != (r = load_ca(sx)))
-			return r;
+	if (NULL == (sslconf.certfile = sslm->srv->getpath(NULL, NULL, sx->cert_fn.ptr, sx->cert_fn.len))
+		|| NULL == (sslconf.pkeyfile = sslm->srv->getpath(NULL, NULL, sx->pkey_fn.ptr, sx->pkey_fn.len))) {
+		e = FFPARS_EBADVAL;
+		goto done;
 	}
 
-	ffssl_ctx_protoallow(sx->sslctx, sx->protos);
+	sslconf.ciphers = (sx->ciphers.ptr != NULL) ? sx->ciphers.ptr : "";
+	sslconf.use_server_cipher = sx->use_server_cipher;
+	sslconf.tls_srvname_func = &tls_srvname;
+	sslconf.allowed_protocols = sx->protos;
+
+	if (0 != (e = ffssl_ctx_conf(sx->sslctx, &sslconf))) {
+		ssl_err(FSV_LOG_ERR, e);
+		e = FFPARS_EINTL;
+		goto done;
+	}
+
+	if (sx->verify != FSV_SSL_VERF_OFF) {
+		if (0 != (r = load_ca(sx))) {
+			e = r;
+			goto done;
+		}
+	}
 
 	if (sx->sess_cache == FSV_SSL_SESSCACHE_OFF)
 		ffssl_ctx_cache(sx->sslctx, -1);
 	else
 		ffssl_ctx_cache(sx->sslctx, sx->sess_cache_size);
 
-	return 0;
+	e = 0;
+
+done:
+	ffmem_safefree(sslconf.certfile);
+	ffmem_safefree(sslconf.pkeyfile);
+	ffstr_free(&sx->pkey_fn);
+	ffstr_free(&sx->cert_fn);
+	return e;
 }
 
 static int ssl_conf_hostname(ffparser_schem *ps, fsv_sslx *sx, const ffstr *v)
@@ -407,11 +398,6 @@ static void* ssl_newctx(ffpars_ctx *args)
 	}
 
 	if (0 != (e = ffssl_ctx_create(&sx->sslctx))) {
-		ssl_err(FSV_LOG_ERR, e);
-		goto err;
-	}
-
-	if (0 != (e = ffssl_ctx_tls_srvname_set(sx->sslctx, &tls_srvname))) {
 		ssl_err(FSV_LOG_ERR, e);
 		goto err;
 	}
