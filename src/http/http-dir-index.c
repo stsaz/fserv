@@ -93,7 +93,7 @@ static void drix_free(drix_obj *o);
 static void drix_fin(drix_obj *o, fsv_logctx *logctx);
 static int drix_getobj(fsv_httphandler *h, drix_obj **po);
 static ssize_t drix_getvar(void *con, const char *name, size_t namelen, void *dst, size_t cap);
-static int drix_ents_sortfunc(FF_QSORT_PARAMS);
+static int drix_ents_sortfunc(const void *a, const void *b, void *udata);
 static void drix_ifmatch(drix_obj *o, fsv_httphandler *h, int *st);
 
 enum DRIX_ITEM_FLAGS {
@@ -291,7 +291,7 @@ static int dirents_fill(direntries *e)
 
 
 /** Alpha-sort filenames, directories first. */
-static int drix_ents_sortfunc(FF_QSORT_PARAMS)
+static int drix_ents_sortfunc(const void *a, const void *b, void *udata)
 {
 	const direntry *e1 = a;
 	const direntry *e2 = b;
@@ -388,7 +388,7 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 		o = NULL;
 	}
 
-	ff_qsort(e.ents.ptr, e.ents.len, sizeof(direntry), &drix_ents_sortfunc, NULL);
+	ffsort(e.ents.ptr, e.ents.len, sizeof(direntry), &drix_ents_sortfunc, NULL);
 
 	if (0 != drix_html_additem(&buf, NULL, F_INIT))
 		goto fail;
