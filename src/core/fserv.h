@@ -497,10 +497,6 @@ typedef void (*fsv_resolv_cb)(void *udata, int status, const ffaddrinfo *ai[2]);
 
 typedef struct fsv_resolv_ctx fsv_resolv_ctx;
 
-enum FSV_RESOLV_F {
-	FSV_RESOLV_CANCEL = 1
-};
-
 struct fsv_resolver {
 	fsv_resolv_ctx * (*newctx)(ffpars_ctx *a);
 

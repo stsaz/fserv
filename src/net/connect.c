@@ -7,6 +7,7 @@ Copyright 2014 Simon Zolin.
 #include <FF/data/json.h>
 #include <FF/net/url.h>
 #include <FF/net/dns.h>
+#include <FF/net/dns-client.h>
 
 
 typedef struct conmodule {
@@ -959,7 +960,7 @@ static int conn_disconnect(fsv_conn *c, int flags)
 	switch (c->status) {
 
 	case ST_RESOLVING:
-		conm->dns->resolve(conm->dnsctx, c->host.ptr, c->hostlen, &conn_onresolve, c, FSV_RESOLV_CANCEL);
+		conm->dns->resolve(conm->dnsctx, c->host.ptr, c->hostlen, &conn_onresolve, c, FFDNSCL_CANCEL);
 		conn_recycle(c);
 		return 0;
 

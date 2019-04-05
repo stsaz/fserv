@@ -96,8 +96,8 @@ int test_resolve(tester *t)
 
 	//add dummy ref to the same query and then unref it
 	x(0 == t->resolve->resolve(t->resolve_ctx, host.ptr, host.len, &test_resolv_cb, (void*)0x1234, 0));
-	x(1 == t->resolve->resolve(t->resolve_ctx, host.ptr, host.len, &test_resolv_cb, (void*)0x12345, FSV_RESOLV_CANCEL));
-	x(0 == t->resolve->resolve(t->resolve_ctx, host.ptr, host.len, &test_resolv_cb, (void*)0x1234, FSV_RESOLV_CANCEL));
+	x(1 == t->resolve->resolve(t->resolve_ctx, host.ptr, host.len, &test_resolv_cb, (void*)0x12345, FFDNSCL_CANCEL));
+	x(0 == t->resolve->resolve(t->resolve_ctx, host.ptr, host.len, &test_resolv_cb, (void*)0x1234, FFDNSCL_CANCEL));
 	return 0;
 }
 

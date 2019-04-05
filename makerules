@@ -59,6 +59,7 @@ $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/net/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  -o$@
 NET_O := $(MOD_NET_OBJ) $(FF_ALL_OBJS) \
 	$(FFOS_SKT) \
+	$(FF_OBJ_DIR)/ffdns-client.o \
 	$(FF_OBJ_DIR)/ffsendfile.o \
 	$(FF_OBJ_DIR)/ffutf8.o \
 	$(FF_OBJ_DIR)/ffurl.o \
