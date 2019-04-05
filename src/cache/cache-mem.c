@@ -187,16 +187,15 @@ static void * cachm_create(const fsv_core *srv, ffpars_ctx *c, fsv_modinfo *m)
 	return cachm;
 }
 
-static int cach_delitem(void *obj, void *udata)
+static void cach_delitem(void *obj)
 {
 	cach_item *cit = obj;
 	cach_fin(cit);
-	return 0;
 }
 
 static void cachx_fin(cachectx *cx)
 {
-	ffrbtl_enumsafe(&cx->items, &cach_delitem, NULL, FFOFF(cach_item, rbtnod));
+	ffrbtl_freeall(&cx->items, &cach_delitem, FFOFF(cach_item, rbtnod));
 	ffmem_free(cx);
 }
 
@@ -234,18 +233,39 @@ static const void * cachm_iface(const char *name)
 	return NULL;
 }
 
-static int cach_onclear(void *obj, void *udata)
+static void cach_onclear(void *obj)
 {
 	cach_item *cit = obj;
 	cach_rlz(cit, cachm->logctx);
-	return 0;
+}
+
+/**
+The function is only safe if ffrbtl_rm() is called before ffmem_free(). */
+static void ffrbtl_enumsafe(ffrbtree *tr, ffrbt_free_t func, size_t off)
+{
+	ffrbt_node *n, *next;
+	ffrbtl_node *nl;
+	fflist_item *li;
+
+	FFTREE_FOR(tr, n) {
+		nl = (void*)n;
+		FFCHAIN_FOR(&nl->sib, li) {
+			void *n2 = FF_PTR(ffrbtl_nodebylist(li), -(ssize_t)off);
+			li = li->next;
+			func(n2);
+		}
+		next = ffrbt_successor(tr, n);
+		void *p = FF_PTR(n, -(ssize_t)off);
+		func(p);
+		n = next;
+	}
 }
 
 static void cachm_clear(void)
 {
 	cachectx *cx;
 	FFLIST_WALK(&cachm->ctxs, cx, sib) {
-		ffrbtl_enumsafe(&cx->items, &cach_onclear, NULL, FFOFF(cach_item, rbtnod));
+		ffrbtl_enumsafe(&cx->items, &cach_onclear, FFOFF(cach_item, rbtnod));
 	}
 }
 

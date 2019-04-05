@@ -158,7 +158,7 @@ static void resv_sendquery(dns_query *q, int resend);
 static int resv_sendquery1(dns_query *q, dns_serv *serv, int resend);
 static void resv_onexpire(void *param);
 static void resv_notifyfin(dns_query *q, int status);
-static void resv_finquery(dns_query *q);
+static void resv_finquery(void *param);
 
 // ANSWERS CACHE
 static void resv_cacheresp(dns_query *q);
@@ -278,8 +278,9 @@ static void * resvm_create(const fsv_core *core, ffpars_ctx *c, fsv_modinfo *m)
 	return resvm;
 }
 
-static void resv_finquery(dns_query *q)
+static void resv_finquery(void *param)
 {
+	dns_query *q = param;
 	ffstr_free(&q->name);
 	ffarr_free(&q->users);
 	ffmem_free(q);
@@ -287,7 +288,7 @@ static void resv_finquery(dns_query *q)
 
 static void resvm_destroy(void)
 {
-	FFRBT_ENUMSAFE(&resvm->queries, resv_finquery, dns_query, rbtnod);
+	ffrbt_freeall(&resvm->queries, &resv_finquery, FFOFF(dns_query, rbtnod));
 	FFLIST_ENUMSAFE(&resvm->servs, dns_serv_fin, dns_serv, sib);
 	ffmem_free(resvm);
 	resvm = NULL;
