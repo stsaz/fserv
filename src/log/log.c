@@ -411,6 +411,13 @@ static int logx_addv(fsv_logctx *lx, int level, const char *modname, const ffstr
 	const char *end = ss + sizeof(ss) - FFSLEN(FF_NEWLN);
 	char *msg = ss;
 	size_t msgsz;
+	uint syserr = 0;
+
+	if (!fsv_log_checklevel(lx, level))
+		return 0;
+
+	if (level & FSV_LOG_SYS)
+		syserr = fferr_last();
 
 	if (logm->use_time != LOGTM_HIDE) {
 		uint f = FSV_TIME_YMD; //LOGTM_UTC
@@ -445,6 +452,9 @@ static int logx_addv(fsv_logctx *lx, int level, const char *modname, const ffstr
 		s += ffs_fmt(s, end, "%*s:\t", trid->len, trid->ptr);
 
 	s += ffs_fmtv(s, end, fmt, va);
+
+	if (level & FSV_LOG_SYS)
+		s += ffs_fmt(s, end, ": %E", syserr);
 
 	s = ffs_copyz(s, ss + sizeof(ss), FF_NEWLN);
 

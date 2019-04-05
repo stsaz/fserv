@@ -178,6 +178,7 @@ enum FSV_LOG_LEV {
 	, FSV_LOG_DBGMASK = 0xfff0
 
 	, FSV_LOG_ACCESS = 0x10000
+	, FSV_LOG_SYS = 0x20000
 };
 
 struct fsv_log {
