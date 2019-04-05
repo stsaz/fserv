@@ -97,7 +97,7 @@ static void stfl_add_hdrs(fsv_httphandler *h, const fftime *modtm);
 static int stfl_redirect(fsv_httphandler *h);
 static void stfl_free(stfl_obj *o);
 static void stfl_fin(stfl_obj *o, fsv_logctx *logctx);
-static int stfl_htmime_cmpkey(void *udata, const char *key, size_t keylen, void *param);
+static int stfl_htmime_cmpkey(void *udata, const void *key, void *param);
 
 
 #define CRC32(p, len) \
@@ -351,18 +351,19 @@ done:
 	return 0;
 }
 
-static int stfl_htmime_cmpkey(void *udata, const char *key, size_t keylen, void *param)
+static int stfl_htmime_cmpkey(void *udata, const void *key, void *param)
 {
 	const mime_ext_t *m = udata;
+	const ffstr *k = key;
 	if (FFPATH_ICASE)
-		return ffs_icmpz(key, keylen, m->ext);
-	return ffs_cmpz(key, keylen, m->ext);
+		return ffs_icmpz(k->ptr, k->len, m->ext);
+	return ffs_cmpz(k->ptr, k->len, m->ext);
 }
 
 static const char* stfl_findmime(const ffstr *ext)
 {
 	uint hash = CRC32(ext->ptr, ext->len);
-	const mime_ext_t *m = ffhst_find(&stflm->htmime, hash, ext->ptr, ext->len, NULL);
+	const mime_ext_t *m = ffhst_find(&stflm->htmime, hash, ext, NULL);
 	if (m == NULL)
 		return NULL;
 	return stflm->mime_types.ptr + m->mimeoff;

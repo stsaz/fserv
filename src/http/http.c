@@ -75,10 +75,10 @@ static int http_conf_handler(ffparser_schem *ps, ffpars_ctx *args, http_submod *
 static httphost * http_defhost(fsv_lsncon *conn);
 static void hthost_destroy(httphost *h);
 static int hthost_hbn_init(void);
-static int hthost_hbn_cmpkey(void *val, const char *key, size_t keylen, void *param);
+static int hthost_hbn_cmpkey(void *val, const void *key, void *param);
 
 static int hthost_hstroute_init(httphost *h);
-static int hthost_hstroute_cmpkey(void *val, const char *key, size_t keylen, void *param);
+static int hthost_hstroute_cmpkey(void *val, const void *key, void *param);
 static void hstroute_free(httptarget *tgt);
 
 // LOG
@@ -362,12 +362,13 @@ static int httgt_conf_index(ffparser_schem *ps, httptarget *tgt, const ffstr *va
 	return 0;
 }
 
-static int hthost_hbn_cmpkey(void *val, const char *key, size_t keylen, void *param)
+static int hthost_hbn_cmpkey(void *val, const void *key, void *param)
 {
 	hostbyname *hbn = val;
 	fsv_lsnctx **lx;
+	const ffstr *k = key;
 
-	if (!ffstr_eq(&hbn->name, key, keylen))
+	if (!ffstr_eq(&hbn->name, k->ptr, k->len))
 		return -1;
 
 	if (hbn->host->listeners.len == 0)
@@ -776,7 +777,7 @@ httphost * http_gethost(fsv_lsncon *conn, const ffstr *name)
 	httpm->lisn->getvar(conn, FFSTR("context_ptr"), &curlx, sizeof(void*));
 
 	hs = ffcrc32_iget(name->ptr, name->len);
-	hbn = ffhst_find(&httpm->ht_hbn, hs, name->ptr, name->len, curlx);
+	hbn = ffhst_find(&httpm->ht_hbn, hs, name, curlx);
 
 	if (hbn == NULL)
 		return NULL;
@@ -885,10 +886,11 @@ static int hthost_hstroute_init(httphost *h)
 	return 0;
 }
 
-static int hthost_hstroute_cmpkey(void *val, const char *key, size_t keylen, void *param)
+static int hthost_hstroute_cmpkey(void *val, const void *key, void *param)
 {
 	httptarget *tgt = val;
-	if (!ffstr_eq(&tgt->path, key, keylen))
+	const ffstr *k = key;
+	if (!ffstr_eq(&tgt->path, k->ptr, k->len))
 		return -1;
 	return 0;
 }
@@ -993,10 +995,11 @@ enum HTTP_VARS {
 	, VAR_LAST
 };
 
-static int http_hstvar_cmpkey(void *udata, const char *key, size_t klen, void *param)
+static int http_hstvar_cmpkey(void *udata, const void *key, void *param)
 {
 	size_t i = (size_t)udata - 1;
-	return !ffstr_eq(&http_vars[i], key, klen);
+	const ffstr *k = key;
+	return !ffstr_eq(&http_vars[i], k->ptr, k->len);
 }
 
 static int http_hstvar_init(void)
@@ -1043,7 +1046,9 @@ static ssize_t http_getvar(void *con, const char *name, size_t namelen, void *ds
 	httpcon *c = con;
 	ffstr val;
 	uint hash = ffcrc32_get(name, namelen);
-	size_t v = (size_t)ffhst_find(&httpm->hstvars, hash, name, namelen, NULL);
+	ffstr nm;
+	ffstr_set(&nm, name, namelen);
+	size_t v = (size_t)ffhst_find(&httpm->hstvars, hash, &nm, NULL);
 
 	if (v == 0) {
 		ffstr nm;

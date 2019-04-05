@@ -72,7 +72,7 @@ static void * htpx_newcon(fsv_httphandler *h);
 static int htpx_connect_allowed(fsv_httphandler *h);
 
 static int htpx_conf_denyurl(ffparser_schem *ps, htpxctx *px, const ffstr *val);
-static int htpx_htdenyurls_cmpkey(void *udata, const char *key, size_t keylen, void *param);
+static int htpx_htdenyurls_cmpkey(void *udata, const void *key, void *param);
 static int htpx_htdenyurls_init(htpxctx *px);
 static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *logctx);
 
@@ -456,10 +456,11 @@ static int htpx_connect_allowed(fsv_httphandler *h)
 	return FFHTTP_SLAST;
 }
 
-static int htpx_htdenyurls_cmpkey(void *udata, const char *key, size_t keylen, void *param)
+static int htpx_htdenyurls_cmpkey(void *udata, const void *key, void *param)
 {
 	const ffbstr *bs = udata;
-	return keylen == bs->len && ffs_cmp(key, bs->data, keylen);
+	const ffstr *k = key;
+	return k->len == bs->len && ffs_cmp(k->ptr, bs->data, k->len);
 }
 
 /** Check whether it's allowed to connect to a requested host. */
@@ -474,7 +475,7 @@ static int htpx_checkdeny(htpxctx *px, const ffhttp_request *req, fsv_logctx *lo
 		host.len--; //remove the trailing dot in case the host is "host.com."
 
 	hash = ffcrc32_get(host.ptr, host.len);
-	if (NULL != ffhst_find(&px->htdenyurls, hash, host.ptr, host.len, NULL))
+	if (NULL != ffhst_find(&px->htdenyurls, hash, &host, NULL))
 		goto denied;
 
 	while (0 != ffbstr_next(px->denyurls_wild.ptr, px->denyurls_wild.len, &off, &wcard)) {
