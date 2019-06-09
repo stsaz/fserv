@@ -3,7 +3,7 @@ Copyright 2014 Simon Zolin
 */
 
 #include <core/fserv.h>
-#include <FF/sendfile.h>
+#include <FF/sys/sendfile.h>
 
 typedef struct tester tester;
 typedef int (*test_func_t)(tester *t);

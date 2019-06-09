@@ -658,7 +658,7 @@ static int srv_savepid(uint pid)
 	fffd f;
 	int r;
 
-	f = fffile_open(serv->pid_fn.ptr, O_CREAT | O_TRUNC | O_WRONLY);
+	f = fffile_open(serv->pid_fn.ptr, FFO_CREATE | FFO_TRUNC | FFO_WRONLY);
 	if (f == FF_BADFD)
 		return 1;
 

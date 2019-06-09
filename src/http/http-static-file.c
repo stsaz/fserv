@@ -483,7 +483,7 @@ static fffd stfl_idx(fsv_httphandler *h, ffstr3 *fn, stfl_obj **po, fffileinfo *
 			}
 		}
 
-		f = fffile_open(fn->ptr, O_RDONLY | O_NOATIME | FFO_NODOSNAME | O_NONBLOCK);
+		f = fffile_open(fn->ptr, FFO_RDONLY | FFO_NOATIME | FFO_NODOSNAME | FFO_NONBLOCK);
 		if (f == FF_BADFD)
 			continue;
 
@@ -549,7 +549,7 @@ static int stfl_getobj(fsv_httphandler *h, stfl_obj **po)
 			}
 		}
 
-		f = fffile_open(fn.ptr, O_RDONLY | O_NOATIME | FFO_NODOSNAME | O_NONBLOCK);
+		f = fffile_open(fn.ptr, FFO_RDONLY | FFO_NOATIME | FFO_NODOSNAME | FFO_NONBLOCK);
 		if (f == FF_BADFD) {
 			st = FFHTTP_500_INTERNAL_SERVER_ERROR;
 			if (fferr_nofile(fferr_last()))
