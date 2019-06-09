@@ -157,7 +157,7 @@ strip: all $(BINS:.$(SO)=.$(SO).debug) $(BIN).debug $(BINS:.exe=.exe.debug)
 
 installd: all
 	mkdir -vp $(RUNDIR) $(RUNDIR)/conf $(RUNDIR)/log $(RUNDIR)/mod \
-		$(RUNDIR)/cache $(RUNDIR)/www
+		$(RUNDIR)/cache $(RUNDIR)/pool-client $(RUNDIR)/www
 	$(CP) $(PROJDIR)/conf/* $(RUNDIR)/conf/
 	$(CP) *.$(SO) $(RUNDIR)/mod/
 	$(CP) $(FF3PTLIB)/libz-ff.$(SO) \
