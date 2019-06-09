@@ -1,0 +1,79 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Logs</title>
+<style>
+body{font-family:verdana,tahoma,arial;font-size:9pt;}
+</style>
+</head>
+
+<body>
+<h1>Logs</h1>
+<form>
+Filter: <input type="text" id="txtFilter"></input>
+<input type="submit" value="Start" onclick="get(); return false;"></input>
+<input type="button" value="Stop" onclick="stop();" id="bStop" disabled="true"></input>
+<input type="button" value="Clear" onclick="areaClear();"></input>
+</form>
+<pre id="area" style="background-color:#fafaff;">
+</pre>
+<hr/>
+<i>fserv</i>
+</body>
+
+<script>
+var refreshInterval = 500;
+var url = "/!log";
+
+var aj = new XMLHttpRequest;
+var tmr = null;
+var lastIdx = 0;
+var area = document.getElementById("area");
+var bStop = document.getElementById("bStop");
+var txtFilter = document.getElementById("txtFilter");
+
+function handler() {
+	if (aj.readyState == 3 && aj.status == 200) {
+		areaUpdate();
+		tmr = setInterval(areaUpdate, refreshInterval);
+	}
+	if (aj.readyState == 4)
+		stop();
+}
+
+function get() {
+	stop();
+	areaClear();
+	var filter = txtFilter.value;
+	aj.onreadystatechange = handler;
+	aj.open("GET", url + "?filter=" + filter);
+	aj.send();
+	bStop.disabled = false;
+}
+
+function stop() {
+	aj.abort();
+	if (tmr != null) {
+		clearInterval(tmr);
+		tmr = null;
+	}
+	bStop.disabled = true;
+}
+
+function areaUpdate() {
+	var newIdx = aj.responseText.length;
+	if (newIdx == lastIdx)
+		return ;
+	var scroll = (window.scrollY + window.innerHeight >= document.body.scrollHeight);
+	area.innerHTML += aj.responseText.substring(lastIdx);
+	lastIdx = newIdx;
+	if (scroll)
+		window.scrollTo(0, document.body.scrollHeight);
+}
+
+function areaClear() {
+	area.innerHTML = "";
+}
+</script>
+
+</html>

@@ -56,10 +56,14 @@ static void oninit(void)
 }
 FFDL_ONINIT(oninit, NULL)
 
+FF_EXTN const fsv_mod fsv_htplog;
+
 FF_EXTN FF_EXP	const fsv_mod * fsv_getmod(const char *name)
 {
 	if (!ffsz_cmp(name, "log"))
 		return &fsv_log_mod;
+	else if (!ffsz_cmp(name, "http"))
+		return &fsv_htplog;
 	return NULL;
 }
 
@@ -152,10 +156,10 @@ static int logx_conf_addleveldbg(ffparser_schem *ps, fsv_logctx *lx, const ffstr
 }
 
 static const char * const log_outnames[] = {
-	"file", "gzip"
+	"file", "gzip", "http"
 };
 static const fsv_log_output *const log_outs[] = {
-	&logf_output, &logz_output
+	&logf_output, &logz_output, &loghttp_output
 };
 
 static const char * const log_slevels[] = {

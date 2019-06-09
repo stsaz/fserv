@@ -31,6 +31,7 @@ typedef struct fsv_log_output {
 
 FF_EXTN const fsv_log_output logf_output;
 FF_EXTN const fsv_log_output logz_output;
+FF_EXTN const fsv_log_output loghttp_output;
 
 
 typedef struct logmodule {
