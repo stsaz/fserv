@@ -447,7 +447,7 @@ static stfl_obj * stfl_fromcache(fsv_cacheitem *ca, const char *fn, fsv_logctx *
 	}
 
 	fsv_dbglog(logctx, FSV_LOG_DBGFLOW, STFL_MODNAME, NULL, "file was modified: %s", fn);
-	stflm->cache->unref(ca, FSV_CACH_UNLINK);
+	stflm->cache->unref(stflm->cachectx, ca, FSV_CACH_UNLINK);
 	return NULL;
 }
 
@@ -679,7 +679,7 @@ static void stfl_fin(stfl_obj *o, fsv_logctx *logctx)
 		fsv_cache_init(&ca);
 		ca.logctx = logctx;
 		ca.id = o->cacheid;
-		stflm->cache->unref(&ca, 0);
+		stflm->cache->unref(stflm->cachectx, &ca, 0);
 		return;
 	}
 

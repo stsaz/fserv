@@ -46,6 +46,7 @@ MOD_CACHE_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(M
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/cache/%.c $(FSERV_H)
 	$(C)  $(CFLAGS)  $<  -o$@
 CACHE_O := $(MOD_CACHE_OBJ) $(FF_ALL_OBJS) \
+	$(FF_OBJ_DIR)/ffcache.o \
 	$(FF_OBJ_DIR)/ffutf8.o \
 	$(FF_OBJ_DIR)/ffjson.o \
 	$(FF_OBJ_DIR)/ffparse.o

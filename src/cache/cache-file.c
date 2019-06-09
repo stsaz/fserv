@@ -498,7 +498,7 @@ static int fcach_mem_unref(fcache *c, uint f, fsv_logctx *logctx)
 	fsv_cache_init(&ca);
 	ca.logctx = logctx;
 	ca.id = c->memid;
-	c->cx->mca->unref(&ca, f);
+	c->cx->mca->unref(c->cx->mcx, &ca, f);
 	return 0;
 }
 

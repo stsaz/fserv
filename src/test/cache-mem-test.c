@@ -67,7 +67,7 @@ static void test_cach_multi(tester *t)
 	ca.data = "mydata1";
 	ca.datalen = FFSLEN("mydata1");
 	x(0 == cach->store(cx, &ca, 0));
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 
 	cach_initscz(&ca, "k3");
 	ca.data = "mydata2";
@@ -85,12 +85,12 @@ static void test_cach_multi(tester *t)
 	x(ca.id != ca2.id);
 	x(!ffs_cmpz(ca2.data, ca2.datalen, "mydata2"));
 	x(state == CACH_K3);
-	x(0 == cach->unref(&ca2, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca2, FSV_CACH_UNLINK));
 	x(state == CACH_K3 + 1);
 
 	x(!ffs_cmpz(ca.data, ca.datalen, "mydata1"));
 	x(state == CACH_K3_1);
-	x(0 == cach->unref(&ca, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca, FSV_CACH_UNLINK));
 	x(state == CACH_K3_1 + 1);
 }
 
@@ -110,7 +110,7 @@ static void test_cach_single(tester *t)
 	ca.refs = 2;
 	x(0 == cach->store(cx, &ca, 0));
 	x(ca.expire == 2); //"expiry" config option worked
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 
 	x(FSV_CACH_ESYS == cach->fetch(cx, &ca, FSV_CACH_NEXT));
 
@@ -118,17 +118,17 @@ static void test_cach_single(tester *t)
 	x(0 == cach->fetch(cx, &ca, 0));
 	x(!ffs_cmpz(ca.data, ca.datalen, "mydata"));
 
-	x(FSV_CACH_ELOCKED == cach->update(&ca, 0));
+	x(FSV_CACH_ELOCKED == cach->update(cx, &ca, 0));
 
 	cach_initscz(&ca2, "K1");
 	x(FSV_CACH_EEXISTS == cach->store(cx, &ca2, 0));
 
-	x(0 == cach->unref(&ca, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca, FSV_CACH_UNLINK));
 	cach_initscz(&ca2, "K1");
 	x(FSV_CACH_ENOTFOUND == cach->fetch(cx, &ca2, 0));
 
 	x(state == CACH_K1);
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 	x(state == CACH_K1 + 1); //the item was deleted
 
 // update
@@ -139,11 +139,11 @@ static void test_cach_single(tester *t)
 
 	ca.data = "mynewdata";
 	ca.datalen = FFSLEN("mynewdata");
-	x(0 == cach->update(&ca, 0));
+	x(0 == cach->update(cx, &ca, 0));
 	x(!ffs_cmpz(ca.data, ca.datalen, "mynewdata"));
 
 	x(state == CACH_K);
-	x(0 == cach->unref(&ca, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca, FSV_CACH_UNLINK));
 	x(state == CACH_K + 1);
 
 // FSV_CACH_ACQUIRE
@@ -156,13 +156,13 @@ static void test_cach_single(tester *t)
 
 	cach_initscz(&ca2, "k2");
 	x(FSV_CACH_ELOCKED == cach->fetch(cx, &ca2, FSV_CACH_ACQUIRE));
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 
 	cach_initscz(&ca, "k2");
 	x(0 == cach->fetch(cx, &ca, FSV_CACH_ACQUIRE));
 	x(!ffs_cmpz(ca.data, ca.datalen, "mydata"));
 	x(state == CACH_K2);
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 	x(state == CACH_K2 + 1); //the item was deleted
 }
 
@@ -190,10 +190,10 @@ static void test_cach_limits(tester *t)
 	cach_initscz(&ca3, "k3");
 	x(FSV_CACH_ENUMLIMIT == cach->store(cx, &ca3, 0)); //"max_items" config option worked
 
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 	x(0 == cach->store(cx, &ca3, 0)); //"k1" was deleted automatically
-	x(0 == cach->unref(&ca2, FSV_CACH_UNLINK));
-	x(0 == cach->unref(&ca3, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca2, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca3, FSV_CACH_UNLINK));
 	x(state == CACH_MAX_ITEMS + 1);
 
 // "mem_limit"
@@ -207,11 +207,11 @@ static void test_cach_limits(tester *t)
 	ca2.datalen = FFSLEN("123456");
 	x(FSV_CACH_EMEMLIMIT == cach->store(cx, &ca2, 0)); //"mem_limit" config option worked
 
-	x(0 == cach->unref(&ca, 0));
+	x(0 == cach->unref(cx, &ca, 0));
 	x(0 == cach->store(cx, &ca2, 0));
 	cach_initscz(&ca, "k1");
 	x(FSV_CACH_ENOTFOUND == cach->fetch(cx, &ca, 0)); //"k1" was deleted automatically
-	x(0 == cach->unref(&ca2, FSV_CACH_UNLINK));
+	x(0 == cach->unref(cx, &ca2, FSV_CACH_UNLINK));
 	x(state == CACH_MEM_LIMIT + 1);
 }
 

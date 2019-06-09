@@ -315,7 +315,7 @@ static void resv_unref(const ffaddrinfo *ai)
 		fsv_cache_init(&ca);
 		ca.logctx = resvm->logctx;
 		ca.id = cached_id;
-		resvm->cachmod->unref(&ca, 0);
+		resvm->cachmod->unref(resvm->cachctx, &ca, 0);
 		return;
 	}
 

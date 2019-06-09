@@ -1105,7 +1105,7 @@ static void conn_close_keepalive(fsv_conn *c)
 	}
 
 	c->status = ST_NONE; //don't do anything in conn_cach_cb()
-	c->cx->cachmod->unref(&ca, FSV_CACH_UNLINK);
+	c->cx->cachmod->unref(c->cx->cachctx, &ca, FSV_CACH_UNLINK);
 	c->kalive_id = NULL;
 	conn_recycle(c);
 }
@@ -1188,7 +1188,7 @@ static fsv_conn * conn_find_keepalive(fsv_conctx *cx, const ffstr *host, fsv_log
 		c = *(fsv_conn**)ca.data;
 		c->status = ST_NONE;
 		FF_ASSERT(c->kalive_id == ca.id);
-		c->cx->cachmod->unref(&ca, FSV_CACH_UNLINK);
+		c->cx->cachmod->unref(cx->cachctx, &ca, FSV_CACH_UNLINK);
 		c->kalive_id = NULL;
 
 #ifdef FF_UNIX

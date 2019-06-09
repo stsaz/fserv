@@ -361,7 +361,7 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 			st = FFHTTP_404_NOT_FOUND;
 		syserrlog(h->logctx, FSV_LOG_ERR, "%e: %s", FFERR_DIROPEN, fn.ptr);
 		if (o != NULL)
-			drixm->cache->unref(&ca, FSV_CACH_UNLINK);
+			drixm->cache->unref(drixm->cachectx, &ca, FSV_CACH_UNLINK);
 		goto fail;
 	}
 
@@ -372,7 +372,7 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 	if (r != FFERR_OK) {
 		syserrlog(h->logctx, FSV_LOG_ERR, "%e", (int)r);
 		if (o != NULL)
-			drixm->cache->unref(&ca, FSV_CACH_UNLINK);
+			drixm->cache->unref(drixm->cachectx, &ca, FSV_CACH_UNLINK);
 		goto fail;
 	}
 
@@ -384,7 +384,7 @@ static int drix_getobj(fsv_httphandler *h, drix_obj **po)
 			goto done;
 		}
 
-		drixm->cache->unref(&ca, FSV_CACH_UNLINK);
+		drixm->cache->unref(drixm->cachectx, &ca, FSV_CACH_UNLINK);
 		o = NULL;
 	}
 
@@ -536,7 +536,7 @@ static void drix_fin(drix_obj *o, fsv_logctx *logctx)
 		fsv_cache_init(&ca);
 		ca.logctx = logctx;
 		ca.id = o->cacheid;
-		drixm->cache->unref(&ca, 0);
+		drixm->cache->unref(drixm->cachectx, &ca, 0);
 		return;
 	}
 

@@ -303,11 +303,11 @@ struct fsv_cache {
 	int (*store)(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
 
 	/** Return enum FSV_CACH_E. */
-	int (*update)(fsv_cacheitem *ca, int flags);
+	int (*update)(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
 
 	/** @flags: enum FSV_CACH_UNREF.
 	Return enum FSV_CACH_E. */
-	int (*unref)(fsv_cacheitem *ca, int flags);
+	int (*unref)(fsv_cachectx *ctx, fsv_cacheitem *ca, int flags);
 };
 
 /* ====================================================================== */
