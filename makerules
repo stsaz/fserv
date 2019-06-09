@@ -1,6 +1,6 @@
 
 OBJ_DIR = .
-BINS = $(BIN) log.$(SO) cache.$(SO) net.$(SO) http.$(SO) http-proxy.$(SO) ssl.$(SO)
+BINS = $(BIN) log.$(SO) cache.$(SO) net.$(SO) http.$(SO) http-proxy.$(SO) ssl.$(SO) broadcast.$(SO)
 FSERV_H = $(FSV_SRCDIR)/core/fserv.h
 
 all: ff $(BINS)
@@ -116,6 +116,26 @@ ssl.$(SO): $(SSL_O)
 	$(LD)  -shared $(SSL_O) $(LDFLAGS) $(LD_RPATH_ORIGIN) $(SSL_LIBS)  -o$@
 
 
+MOD_BCAST_SRC = $(wildcard $(FSV_SRCDIR)/broadcast/*.c)
+MOD_BCAST_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_BCAST_SRC)))))
+$(OBJ_DIR)/%.o: $(FSV_SRCDIR)/broadcast/%.c $(wildcard $(FSV_SRCDIR)/broadcast/*.h) $(FSERV_H) $(FF_AUDIO_HDR)
+	$(C)  $(CFLAGS)  $<  -o$@
+BCAST_O := $(MOD_BCAST_OBJ) \
+	$(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
+	$(FF_OBJ_DIR)/ffproto.o \
+	$(FF_OBJ_DIR)/ffmp3.o \
+	$(FF_OBJ_DIR)/ffmpg-fmt.o \
+	$(FF_OBJ_DIR)/ffid3.o \
+	$(FF_OBJ_DIR)/ffapetag.o \
+	$(FF_OBJ_DIR)/fficy.o \
+	$(FF_OBJ_DIR)/ffutf8.o \
+	$(FF_OBJ_DIR)/ffjson.o \
+	$(FF_OBJ_DIR)/ffm3u.o \
+	$(FF_OBJ_DIR)/ffparse.o
+broadcast.$(SO): $(BCAST_O)
+	$(LD)  -shared $(BCAST_O) $(LDFLAGS)  -o$@
+
+
 MOD_TEST_SRC = $(wildcard $(FSV_SRCDIR)/test/*.c)
 MOD_TEST_OBJ = $(addprefix $(OBJ_DIR)/, $(addsuffix .o, $(notdir $(basename $(MOD_TEST_SRC)))))
 $(OBJ_DIR)/%.o: $(FSV_SRCDIR)/test/%.c $(FSERV_H)
@@ -151,6 +171,7 @@ installd: all
 	$(CP) $(FSV_SRCDIR)/http/dir_index.html $(FSV_SRCDIR)/http/error.html $(FSV_SRCDIR)/http/mime.conf $(FSV_SRCDIR)/http/static.conf $(RUNDIR)/conf/
 
 	$(CP) $(FSV_SRCDIR)/http-proxy/fwdproxy.conf $(FSV_SRCDIR)/http-proxy/revproxy.conf $(RUNDIR)/conf/
+	$(CP) $(FSV_SRCDIR)/broadcast/radio.conf $(RUNDIR)/conf/
 
 ifneq ($(OS),win)
 	$(CP) $(BIN) $(RUNDIR)/

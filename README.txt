@@ -13,6 +13,7 @@ Default modules:
 	. http.so: http, static-file, dir-index, errdoc, gzip, status
 	. http-proxy.so: proxy
 	. ssl.so: ssl
+	. broadcast.so: icy
 External modules are loaded from mod/ directory.
 
 ---------------

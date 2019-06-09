@@ -1,0 +1,5 @@
+#EXTM3U
+#EXTINF:-1,Local
+http://localhost:8080/local
+#EXTINF:-1,Proxy
+http://localhost:8080/proxy
