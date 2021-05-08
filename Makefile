@@ -8,6 +8,8 @@ VER =
 OS :=
 OPT := LTO3
 
+FFBASE := $(ROOT)/ffbase
+FFPACK := $(ROOT)/ffpack
 FFOS := $(ROOT)/ffos
 FF := $(ROOT)/ff
 FF3PT := $(ROOT)/ff-3pt
@@ -26,8 +28,8 @@ FF_CFLAGS := $(CFLAGS)
 FF3PTLIB := $(FF3PT)-bin/$(OS)-$(ARCH)
 FF3PT_CFLAGS := $(CFLAGS)
 
-override CFLAGS += -Wall -Werror \
-	-I$(FSV_SRCDIR) -I$(FF) -I$(FFOS) -I$(FF3PT)
+override CFLAGS += -Wall -Werror -Wno-stringop-overflow \
+	-I$(FSV_SRCDIR) -I$(FF) -I$(FFPACK) -I$(FFOS) -I$(FFBASE) -I$(FF3PT)
 
 override LDFLAGS += \
 	-L$(FF3PTLIB) $(LD_LWS2_32)

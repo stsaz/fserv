@@ -85,7 +85,7 @@ static void test_lsn_srv_onrecv(void *udata)
 			return;
 		}
 
-		fsv_dbglog(t->logctx, FSV_LOG_DBGNET, "TEST", NULL, "srv recvd +%I [%I]", r, r + t->inbuf.len);
+		fsv_dbglog(t->logctx, FSV_LOG_DBGNET, "TEST", NULL, "srv recvd +%L [%L]", r, r + t->inbuf.len);
 		x(r > 0);
 		t->inbuf.len += r;
 		if (0 == ffarr_unused(&t->inbuf))
@@ -188,7 +188,7 @@ static void test_lsn_client_onrecv(void *udata)
 			return;
 		}
 
-		fsv_dbglog(t->logctx, FSV_LOG_DBGNET, "TEST", NULL, "client recvd +%I [%I]", r, r + t->inbuf2.len);
+		fsv_dbglog(t->logctx, FSV_LOG_DBGNET, "TEST", NULL, "client recvd +%L [%L]", r, r + t->inbuf2.len);
 		x(r > 0);
 		t->inbuf2.len += r;
 		if (0 == ffarr_unused(&t->inbuf2))

@@ -20,7 +20,7 @@ static void test_conn_connectok(tester *t)
 	ffskt sk;
 
 	t->conn->getvar(t->conn_id, FFSTR("socket_fd"), &sk, sizeof(ffskt));
-	fsv_dbglog(t->logctx, FSV_LOG_DBGNET, "TEST", NULL, "socket: %I", sk);
+	fsv_dbglog(t->logctx, FSV_LOG_DBGNET, "TEST", NULL, "socket: %L", sk);
 
 	t->conn->fin(t->conn_id, FSV_CONN_KEEPALIVE);
 	t->conn_id = NULL;

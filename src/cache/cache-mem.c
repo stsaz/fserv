@@ -200,7 +200,7 @@ static const void * cachm_iface(const char *name)
 static void cachm_clear(void)
 {
 	cachectx *cx;
-	FFLIST_WALK(&cachm->ctxs, cx, sib) {
+	_FFLIST_WALK(&cachm->ctxs, cx, sib) {
 		ffcache_reset(cx->x);
 	}
 }
@@ -222,7 +222,7 @@ static void cach_status(const fsv_status *statusmod)
 	char buf[4096];
 	ffjson_cookinit(&status_json, buf, sizeof(buf));
 
-	FFLIST_WALK(&cachm->ctxs, cx, sib) {
+	_FFLIST_WALK(&cachm->ctxs, cx, sib) {
 		struct ffcache_stat st;
 		ffcache_stat(cx->x, &st);
 		ffjson_addv(&status_json, cach_status_jsonmeta, FFCNT(cach_status_jsonmeta)

@@ -350,13 +350,13 @@ static int htcache_getexpire(htcache *c, const ffhttp_response *resp)
 	}
 
 	if (0 != ffhttp_findihdr(&resp->h, FFHTTP_EXPIRES, &val)
-		&& 0 != fftime_fromstr(&dt, val.ptr, val.len, FFTIME_WDMY)) {
+		&& val.len == fftime_fromstr(&dt, val.ptr, val.len, FFTIME_WDMY)) {
 
 		fftime_join(&t, &dt, FFTIME_TZUTC);
 		expires = fftime_to_time_t(&t);
 
 		if (0 != ffhttp_findihdr(&resp->h, FFHTTP_DATE, &val)
-			&& 0 != fftime_fromstr(&dt, val.ptr, val.len, FFTIME_WDMY)) {
+			&& val.len == fftime_fromstr(&dt, val.ptr, val.len, FFTIME_WDMY)) {
 
 			fftime_join(&t, &dt, FFTIME_TZUTC);
 			date = fftime_to_time_t(&t);

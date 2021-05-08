@@ -260,7 +260,7 @@ static int logm_sig(int sig)
 	case FSVCORE_SIGREOPEN: {
 		fsv_logctx *lx;
 		logoutput *out;
-		FFLIST_WALK(&logm->ctxs, lx, sib) {
+		_FFLIST_WALK(&logm->ctxs, lx, sib) {
 			FFARR_WALK(&lx->outs, out) {
 				out->iface->open(out->instance, LOG_REOPEN);
 			}
@@ -298,7 +298,7 @@ static void logm_flush()
 {
 	fsv_logctx *lx;
 	logoutput *out;
-	FFLIST_WALK(&logm->ctxs, lx, sib) {
+	_FFLIST_WALK(&logm->ctxs, lx, sib) {
 		FFARR_WALK(&lx->outs, out) {
 			out->iface->open(out->instance, LOG_FLUSH);
 		}

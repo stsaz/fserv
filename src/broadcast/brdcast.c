@@ -203,7 +203,7 @@ static int bcastm_start(void)
 
 	bcastm->core->timer(&bcastm->status_tmr, 1000, &bcast_statustimer, NULL);
 
-	FFLIST_WALK(&bcastm->ctxs, bx, sib) {
+	_FFLIST_WALK(&bcastm->ctxs, bx, sib) {
 		if (bx->always_on)
 			bcastx_start(bx);
 	}
@@ -214,7 +214,7 @@ static void bcastm_stop(void)
 {
 	bcastctx *bx;
 
-	FFLIST_WALK(&bcastm->ctxs, bx, sib) {
+	_FFLIST_WALK(&bcastm->ctxs, bx, sib) {
 		bx->iface->stop(bx->prov);
 	}
 }
@@ -260,7 +260,7 @@ static void bcastm_status(const fsv_status *statusmod)
 	ffjson_cook status_json;
 	ffjson_cookinit(&status_json, NULL, 0);
 
-	FFLIST_WALK(&bcastm->ctxs, bx, sib) {
+	_FFLIST_WALK(&bcastm->ctxs, bx, sib) {
 
 		sduration.len = 0;
 		if (bx->status == ST_READY && bx->lastMetaChange != 0) {
@@ -376,7 +376,7 @@ static void bcast_statustimer(void *param)
 	fftime now = bcastm->core->fsv_gettime();
 	bcastm->lastUpdOutputBPS = fftime_mcs(&now);
 
-	FFLIST_WALK(&bcastm->ctxs, bx, sib) {
+	_FFLIST_WALK(&bcastm->ctxs, bx, sib) {
 		bx->outputBPS = bx->outTraffic - bx->outTrafficLastSec;
 		bx->outTrafficLastSec = bx->outTraffic;
 	}
@@ -386,7 +386,7 @@ static void bcast_statustimer(void *param)
 static void bcast_resumeClients(bcastctx *bx)
 {
 	bcast_client *c
-		, *last = FF_GETPTR(bcast_client, sib, bx->suspendedClients.last);
+		, *last = FF_GETPTR(bcast_client, sib, fflist_last(&bx->suspendedClients));
 		//we don't resume the clients that will be added to this queue in this iteration
 	fflist_item *next;
 

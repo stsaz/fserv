@@ -139,7 +139,7 @@ static int mp3stor_conf_dir(ffparser_schem *ps, mp3store *stor, const ffstr *val
 	return 0;
 }
 
-typedef size_t (*chcase_func_t)(char *dst, const char *bufend, const char *src, size_t len);
+typedef size_t (*chcase_func_t)(char *dst, ffsize cap, const char *src, ffsize len);
 static const chcase_func_t chcase[] = { &ffs_lower, &ffs_upper, &ffs_titlecase };
 
 /** Prepare filename.
@@ -177,7 +177,7 @@ static int mp3stor_prepfn(mp3store *stor, char *fn, size_t cnt)
 		ntitl = ffpath_makefn(pfn, fnend - pfn, stor->title.ptr, stor->title.len, '_');
 
 		if (stor->change_case != ccaseOff)
-			chcase[stor->change_case - 1](pfn, fnend, pfn, ntitl);
+			chcase[stor->change_case - 1](pfn, fnend - pfn, pfn, ntitl);
 
 		if (!stor->use_spaces)
 			ffs_replacechar(pfn, ntitl, pfn, fnend - pfn, ' ', '.', NULL);
@@ -204,14 +204,14 @@ static void mp3stor_writetags(mp3store *stor, ffstr3 *buf)
 	fficy_streamtitle(stor->title.ptr, stor->title.len, &sartist, &stitle);
 
 	if (stor->change_case != ccaseOff) {
-		stitle.len = chcase[stor->change_case - 1](tmp, tmp + sizeof(tmp), stitle.ptr, stitle.len);
+		stitle.len = chcase[stor->change_case - 1](tmp, sizeof(tmp), stitle.ptr, stitle.len);
 		stitle.ptr = tmp;
 	}
 	ffid3_add(&id3, FFMMTAG_TITLE, stitle.ptr, stitle.len);
 
 	if (sartist.len != 0) {
 		if (stor->change_case != ccaseOff) {
-			sartist.len = chcase[stor->change_case - 1](tmp, tmp + sizeof(tmp), sartist.ptr, sartist.len);
+			sartist.len = chcase[stor->change_case - 1](tmp, sizeof(tmp), sartist.ptr, sartist.len);
 			sartist.ptr = tmp;
 		}
 		ffid3_add(&id3, FFMMTAG_ARTIST, sartist.ptr, sartist.len);

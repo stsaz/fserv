@@ -4,7 +4,7 @@ Copyright 2014 Simon Zolin.
 
 #include <core/fserv.h>
 #include <http/iface.h>
-#include <FF/pack/gz.h>
+#include <ffpack/gzwrite.h>
 
 
 typedef struct gz_module {
@@ -28,7 +28,8 @@ typedef struct gz_ctx {
 typedef struct gzcon {
 	uint state;
 	ffstr buf;
-	ffgz_cook gz;
+	ffgzwrite gz;
+	ffuint64 total_wr;
 } gzcon;
 
 
@@ -158,9 +159,12 @@ static gzcon* gz_newcon(gz_ctx *zx)
 	if (NULL == ffstr_alloc(&c->buf, zx->buf_size))
 		goto err;
 
-	if (0 != ffgz_winit(&c->gz, zx->gzlevel, zx->gzmem)
-		|| 0 != ffgz_wfile(&c->gz, NULL, NULL)) {
-		ffgz_wclose(&c->gz);
+	ffgzwrite_conf conf = {
+		.deflate_level = zx->gzlevel,
+		.deflate_mem = zx->gzmem,
+	};
+	if (0 != ffgzwrite_init(&c->gz, &conf)) {
+		ffgzwrite_destroy(&c->gz);
 		ffstr_free(&c->buf);
 		goto err;
 	}
@@ -208,6 +212,8 @@ static void gz_onevent(fsv_httphandler *h)
 		ffhttp_addihdr(h->resp, FFHTTP_VARY, FFSTR("Accept-Encoding"));
 	}
 
+	ffstr in, out = {};
+
 	for (;;) {
 	switch (c->state) {
 
@@ -220,38 +226,39 @@ static void gz_onevent(fsv_httphandler *h)
 
 		if (n == 0) {
 			if (h->flags & FSV_HTTP_LAST)
-				ffgz_wfinish(&c->gz);
+				ffgzwrite_finish(&c->gz);
 			else if (h->flags & FSV_HTTP_PUSH)
-				ffgz_wflush(&c->gz);
+				ffgzwrite_flush(&c->gz);
 		}
 
-		ffstr_set2(&c->gz.in, &chunk);
+		ffstr_set2(&in, &chunk);
 		c->state = 1;
 		// break
 
 	case 1:
-		r = ffgz_write(&c->gz, c->buf.ptr + c->buf.len, zx->buf_size - c->buf.len);
-		rd = chunk.len - c->gz.in.len;
+		r = ffgzwrite_process(&c->gz, &in, &out);
+		rd = chunk.len - in.len;
+		c->total_wr += out.len;
 
-		fsv_dbglog(h->logctx, FSV_LOG_DBGFLOW, GZ_MODNAME, NULL, "ffgz_write() in: +%L [%U], out: +%L [%U]"
-			, rd, c->gz.insize, c->gz.out.len, c->gz.outsize);
+		fsv_dbglog(h->logctx, FSV_LOG_DBGFLOW, GZ_MODNAME, NULL, "ffgzwrite_process() in: +%L [%U], out: +%L [%U]"
+			, rd, c->gz.total_rd, out.len, c->total_wr);
 
 		ffsf_shift(h->data, rd);
 
 		switch (r) {
-		case FFGZ_DONE:
+		case FFGZWRITE_DONE:
 			goto send;
 
-		case FFGZ_DATA:
+		case FFGZWRITE_DATA:
 			c->state = 2;
 			continue;
 
-		case FFGZ_MORE:
+		case FFGZWRITE_MORE:
 			break;
 
 		default:
-			fsv_errlog(h->logctx, FSV_LOG_ERR, GZ_MODNAME, NULL, "ffgz_write(): (%d) %s"
-				, (int)r, ffgz_errstr(&c->gz));
+			fsv_errlog(h->logctx, FSV_LOG_ERR, GZ_MODNAME, NULL, "ffgzwrite_process(): (%d) %s"
+				, (int)r, ffgzwrite_error(&c->gz));
 			goto fail;
 		}
 
@@ -265,8 +272,8 @@ static void gz_onevent(fsv_httphandler *h)
 		continue;
 
 	case 2:
-		wr = ffstr_cat(&c->buf, zx->buf_size, c->gz.out.ptr, c->gz.out.len);
-		ffstr_shift(&c->gz.out, wr);
+		wr = ffstr_cat(&c->buf, zx->buf_size, out.ptr, out.len);
+		ffstr_shift(&out, wr);
 		if (c->buf.len == zx->buf_size) {
 			f = FSV_HTTP_MORE;
 			goto send;
@@ -283,7 +290,7 @@ send:
 	return;
 
 fail:
-	ffgz_wclose(&c->gz);
+	ffgzwrite_destroy(&c->gz);
 
 err:
 	ffhttp_setstatus(h->resp, FFHTTP_500_INTERNAL_SERVER_ERROR);
@@ -295,12 +302,12 @@ static void gz_ondone(fsv_httphandler *h)
 	gzcon *c = h->id->udata;
 
 	if (fsv_log_checkdbglevel(h->logctx, FSV_LOG_DBGFLOW)) {
-		uint ratio = 100 - FFINT_DIVSAFE(c->gz.outsize * 100, c->gz.insize);
+		uint ratio = 100 - FFINT_DIVSAFE(c->total_wr * 100, c->gz.total_rd);
 		fsv_dbglog(h->logctx, FSV_LOG_DBGFLOW, GZ_MODNAME, NULL, "input: %U, output: %U, ratio: %u%%"
-			, c->gz.insize, c->gz.outsize, ratio);
+			, c->gz.total_rd, c->total_wr, ratio);
 	}
 
-	ffgz_wclose(&c->gz);
+	ffgzwrite_destroy(&c->gz);
 	ffstr_free(&c->buf);
 	ffmem_free(c);
 }

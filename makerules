@@ -7,7 +7,7 @@ all: ff $(BINS)
 
 include $(FF)/makerules
 include $(FF3PT)/makerules
-FF_ALL_OBJS := $(FFOS_OBJ) $(FF_OBJ) $(FF_OBJ_DIR)/ffdbg.o
+FF_ALL_OBJS := $(FFOS_OBJ) $(FF_OBJ)
 FF_HTTP_OBJ := $(FF_OBJ_DIR)/ffhttp.o $(FF_OBJ_DIR)/ffurl.o
 
 
@@ -35,7 +35,6 @@ LOG_O := $(MOD_LOG_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
 	$(FF_OBJ_DIR)/ffutf8.o \
 	$(FF_OBJ_DIR)/ffjson.o \
 	$(FF_OBJ_DIR)/ffparse.o \
-	$(FF_OBJ_DIR)/ffgz.o \
 	$(FF_OBJ_DIR)/crc.o
 log.$(SO): $(LOG_O)
 	$(LD)  -shared $(LOG_O) $(LDFLAGS) $(LD_RPATH_ORIGIN) -lz-ff  -o$@
@@ -84,7 +83,6 @@ HTTP_O := $(MOD_HTTP_OBJ) $(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
 	$(FF_OBJ_DIR)/ffutf8.o \
 	$(FF_OBJ_DIR)/ffjson.o \
 	$(FF_OBJ_DIR)/ffparse.o \
-	$(FF_OBJ_DIR)/ffgz.o \
 	$(FF_OBJ_DIR)/crc.o
 http.$(SO): $(HTTP_O)
 	$(LD)  -shared $(HTTP_O) $(LDFLAGS) $(LD_RPATH_ORIGIN) -lz-ff  -o$@
@@ -124,7 +122,6 @@ BCAST_O := $(MOD_BCAST_OBJ) \
 	$(FF_ALL_OBJS) $(FF_HTTP_OBJ) \
 	$(FF_OBJ_DIR)/ffproto.o \
 	$(FF_OBJ_DIR)/ffmp3.o \
-	$(FF_OBJ_DIR)/ffmpg-fmt.o \
 	$(FF_OBJ_DIR)/ffid3.o \
 	$(FF_OBJ_DIR)/ffapetag.o \
 	$(FF_OBJ_DIR)/fficy.o \

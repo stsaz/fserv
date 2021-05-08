@@ -389,7 +389,7 @@ static int hthost_hbn_init(void)
 	httphost *h;
 	hostbyname *hbn;
 
-	FFLIST_WALK(&httpm->hosts, h, sib) {
+	_FFLIST_WALK(&httpm->hosts, h, sib) {
 		names_size += h->names.len;
 		names_count += ffs_nfindc(h->names.ptr, h->names.len, '\0');
 	}
@@ -403,7 +403,7 @@ static int hthost_hbn_init(void)
 	httpm->hbn_arr.len = names_size;
 	hbn = httpm->hbn_arr.ptr;
 
-	FFLIST_WALK(&httpm->hosts, h, sib) {
+	_FFLIST_WALK(&httpm->hosts, h, sib) {
 		char *nm;
 		size_t len;
 		uint hash;
@@ -754,7 +754,7 @@ static httphost * http_defhost(fsv_lsncon *conn)
 
 	httpm->lisn->getvar(conn, FFSTR("context_ptr"), &curlx, sizeof(void*));
 
-	FFLIST_WALK(&httpm->hosts, h, sib) {
+	_FFLIST_WALK(&httpm->hosts, h, sib) {
 
 		if (h->listeners.len == 0)
 			return h;
@@ -877,7 +877,7 @@ static int hthost_hstroute_init(httphost *h)
 		return FFPARS_ESYS;
 	h->hstroute.cmpkey = &hthost_hstroute_cmpkey;
 
-	FFLIST_WALK(&h->routes, tgt, sib) {
+	_FFLIST_WALK(&h->routes, tgt, sib) {
 		uint hash = ffcrc32_iget(tgt->path.ptr, tgt->path.len);
 		if (ffhst_ins(&h->hstroute, hash, tgt) < 0)
 			return -1;
@@ -1054,7 +1054,7 @@ static ssize_t http_getvar(void *con, const char *name, size_t namelen, void *ds
 		ffstr nm;
 		ffstr_set(&nm, name, namelen);
 
-		if (ffstr_matchcz(&nm, "http_")) {
+		if (ffstr_matchz(&nm, "http_")) {
 			ffstr_shift(&nm, FFSLEN("http_"));
 			return http_getvar_hdr(c, &nm, dst);
 		}

@@ -207,7 +207,7 @@ static int lsnx_conf_listen(ffparser_schem *ps, lisnctx *lx, const ffstr *s)
 	if (0 != ffaddr_set(&lx->addr, ip.ptr, ip.len, port.ptr, port.len))
 		return FFPARS_EBADVAL;
 
-	if (NULL == ffstr_copy(&lx->saddr, s->ptr, s->len))
+	if (NULL == ffstr_dup(&lx->saddr, s->ptr, s->len))
 		return FFPARS_ESYS;
 	lx->saddr_portlen = (byte)port.len;
 
@@ -349,7 +349,7 @@ static int lsnm_start(void)
 	lisnctx *lx;
 	lsnm->kq = lsnm->core->conf()->queue;
 
-	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+	_FFLIST_WALK(&lsnm->ctxs, lx, sib) {
 		if (0 != lsnx_start(lx))
 			return 1;
 	}
@@ -368,7 +368,7 @@ static int lsnm_stop(void)
 
 	lsnm->core->fsv_timerstop(&lsnm->queued_cons_timer);
 
-	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+	_FFLIST_WALK(&lsnm->ctxs, lx, sib) {
 		lx_dbglog(lx, FSV_LOG_DBGFLOW, "stopping listener");
 		FF_SAFECLOSE(lx->lsk, FF_BADSKT, ffskt_close);
 	}
@@ -404,7 +404,7 @@ static void lisn_status(const fsv_status *statusmod)
 	char buf[4096];
 	ffjson_cookinit(&status_json, buf, sizeof(buf));
 
-	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+	_FFLIST_WALK(&lsnm->ctxs, lx, sib) {
 		ffjson_addv(&status_json, lsn_status_jsonmeta, FFCNT(lsn_status_jsonmeta)
 			, FFJSON_CTXOPEN
 			, "listener", &lx->saddr
@@ -445,7 +445,7 @@ static fsv_lsnctx * lsn_newctx(ffpars_ctx *a, const fsv_listen_cb *cb, void *use
 static fsv_lsnctx * lsn_findctx(const char *name, size_t len)
 {
 	lisnctx *lx;
-	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+	_FFLIST_WALK(&lsnm->ctxs, lx, sib) {
 		if (ffstr_eq(&lx->saddr, name, len))
 			return (fsv_lsnctx*)lx;
 	}
@@ -609,7 +609,7 @@ static void lsn_callmod(fsv_lsncon *c)
 static void lsnm_process_queued_cons(void *param)
 {
 	lisnctx *lx;
-	FFLIST_WALK(&lsnm->ctxs, lx, sib) {
+	_FFLIST_WALK(&lsnm->ctxs, lx, sib) {
 		if (lx->queued) {
 			lx->queued = 0;
 			lsn_onaccept(lx);

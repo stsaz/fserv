@@ -448,7 +448,7 @@ done:
 static FFINL httptarget* http_findrxroute(const ffstr *path, httptarget *tgt)
 {
 	httptarget *rxtgt;
-	FFLIST_WALK(&tgt->rxroutes, rxtgt, sib) {
+	_FFLIST_WALK(&tgt->rxroutes, rxtgt, sib) {
 		if (0 == ffs_regex(rxtgt->path.ptr, rxtgt->path.len, path->ptr, path->len, 0))
 			return rxtgt;
 	}

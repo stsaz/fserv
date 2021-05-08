@@ -3,11 +3,11 @@ Copyright (c) 2014 Simon Zolin
 */
 
 #include "log.h"
-#include <FF/pack/gz.h>
+#include <ffpack/gzwrite.h>
 
 
 typedef struct loggzip {
-	ffgz_cook gz;
+	ffgzwrite gz;
 	fffd fd;
 	ffstr3 buf;
 
@@ -160,30 +160,39 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 	int rc = 1;
 	int r;
 	ffstr sbuf = {0};
-	ffgz_cook *gz = &lz->gz;
+	ffgzwrite *gz = &lz->gz;
 	enum { GZCAP = 16 * 1024 };
 
 	if (NULL == ffstr_alloc(&sbuf, GZCAP))
 		goto end;
 
-	if (0 != ffgz_winit(gz, lz->gzlev, lz->gzmem)
-		|| 0 != ffgz_wfile(gz, NULL, 0)) {
-		logm_err("init deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
+	ffgzwrite_conf conf = {
+		.deflate_level = lz->gzlev,
+		.deflate_mem = lz->gzmem,
+	};
+	if (0 != ffgzwrite_init(gz, &conf)) {
+		logm_err("init deflate: %S: %s", &lz->fn, ffgzwrite_error(gz));
 		goto end;
 	}
 
-	ffgz_wfinish(gz);
-	ffstr_set(&gz->in, d, len);
+	ffgzwrite_finish(gz);
+	ffstr in, out = {};
+	ffstr_set(&in, d, len);
 
 	for (;;) {
-		r = ffgz_write(gz, sbuf.ptr + sbuf.len, GZCAP - sbuf.len);
+
+		if (out.len == 0)
+			r = ffgzwrite_process(gz, &in, &out);
+		else
+			r = FFGZWRITE_DATA;
+
 		switch (r) {
-		case FFGZ_DONE:
+		case FFGZWRITE_DONE:
 			break;
 
-		case FFGZ_DATA: {
-			size_t n = ffstr_cat(&sbuf, GZCAP, gz->out.ptr, gz->out.len);
-			ffstr_shift(&gz->out, n);
+		case FFGZWRITE_DATA: {
+			size_t n = ffstr_cat(&sbuf, GZCAP, out.ptr, out.len);
+			ffstr_shift(&out, n);
 			sbuf.len += n;
 			if (sbuf.len != GZCAP)
 				continue;
@@ -191,7 +200,7 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 		}
 
 		default:
-			logm_err("deflate: %S: %s", &lz->fn, ffgz_errstr(gz));
+			logm_err("deflate: %S: %s", &lz->fn, ffgzwrite_error(gz));
 			goto end;
 		}
 
@@ -205,7 +214,7 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 			, (size_t)len, &lz->fn);
 #endif
 
-		if (r == FFGZ_DONE)
+		if (r == FFGZWRITE_DONE)
 			break;
 	}
 
@@ -213,6 +222,6 @@ static int logz_flush(loggzip *lz, const char *d, size_t len, int flush)
 
 end:
 	ffstr_free(&sbuf);
-	ffgz_wclose(gz);
+	ffgzwrite_destroy(gz);
 	return rc;
 }

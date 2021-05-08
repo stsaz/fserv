@@ -89,7 +89,7 @@ static const ffpars_arg htlog_args[] = {
 static int htlogusr_conf_usename(ffparser_schem *ps, htlog_usr *hu, ffstr *v)
 {
 	htlog *hl;
-	FFLIST_WALK(&mod->htlogs, hl, sib) {
+	_FFLIST_WALK(&mod->htlogs, hl, sib) {
 		if (ffstr_eq2(&hl->name, v)) {
 			hu->hl = hl;
 			return 0;
@@ -174,7 +174,7 @@ static int htp_write(fsv_log_outptr *instance, int lev, const char *msg, size_t 
 {
 	htlog *hl = (htlog*)instance;
 	LogClient *c;
-	FFLIST_WALK(&hl->clients, c, sib) {
+	_FFLIST_WALK(&hl->clients, c, sib) {
 		if (msg + len == ffs_finds(msg, len, FFSTR2(c->filter)))
 			continue;
 		if (bufSize - c->curBuf->len < len)
@@ -305,8 +305,8 @@ static void log_http_onTimer(void *param)
 {
 	htlog *hl;
 	LogClient *c;
-	FFLIST_WALK(&mod->htlogs, hl, sib) {
-		FFLIST_WALK(&hl->clients, c, sib) {
+	_FFLIST_WALK(&mod->htlogs, hl, sib) {
+		_FFLIST_WALK(&hl->clients, c, sib) {
 			if (!c->suspended)
 				continue;
 

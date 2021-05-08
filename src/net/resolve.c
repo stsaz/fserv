@@ -207,7 +207,7 @@ static void resv_status(const fsv_status *statusmod)
 	char buf[4096];
 	ffjson_cookinit(&status_json, buf, sizeof(buf));
 
-	FFLIST_WALK(&resvm->r->servs, serv, sib) {
+	_FFLIST_WALK(&resvm->r->servs, serv, sib) {
 		ffjson_addv(&status_json, resvm_status_json_meta, FFCNT(resvm_status_json_meta)
 			, FFJSON_CTXOPEN
 			, "server", &serv->saddr
@@ -220,7 +220,7 @@ static void resv_status(const fsv_status *statusmod)
 	ffjson_cookfin(&status_json);
 }
 
-static void resv_log(uint level, const ffstr *trxn, const char *fmt, ...)
+static void resv_log(uint level, const char *fmt, ...)
 {
 	uint lev;
 	switch (level & 0x0f) {
@@ -241,7 +241,7 @@ static void resv_log(uint level, const ffstr *trxn, const char *fmt, ...)
 
 	va_list va;
 	va_start(va, fmt);
-	fsv_logctx_get(resvm->logctx)->mlog->addv(resvm->logctx, lev, RESV_MODNAME, trxn, fmt, va);
+	fsv_logctx_get(resvm->logctx)->mlog->addv(resvm->logctx, lev, RESV_MODNAME, NULL, fmt, va);
 	va_end(va);
 }
 

@@ -310,7 +310,7 @@ static int conn_serv_conf_ssl(ffparser_schem *ps, conn_serv *serv, ffpars_ctx *a
 static int conx_conf_end(ffparser_schem *ps, fsv_conctx *cx)
 {
 	conn_serv *serv;
-	FFLIST_WALK(&cx->upstm, serv, sib) {
+	_FFLIST_WALK(&cx->upstm, serv, sib) {
 
 		if (NULL != ffs_findc(serv->surl.ptr, serv->surl.len, '$'))
 			serv->dynamic_url = 1;
@@ -324,7 +324,7 @@ static int conx_conf_end(ffparser_schem *ps, fsv_conctx *cx)
 		}
 	}
 
-	cx->curserv = FF_GETPTR(conn_serv, sib, cx->upstm.first);
+	cx->curserv = FF_GETPTR(conn_serv, sib, fflist_first(&cx->upstm));
 	cx->eff_weight = cx->curserv->weight;
 
 	return 0;
@@ -438,10 +438,10 @@ static void conn_status(const fsv_status *statusmod)
 	char buf[4096];
 	ffjson_cookinit(&status_json, buf, sizeof(buf));
 
-	FFLIST_WALK(&conm->ctxs, cx, sib) {
+	_FFLIST_WALK(&conm->ctxs, cx, sib) {
 		ffjson_addv(&status_json, conm_status_json_meta, FFCNT(conm_status_json_meta)
 			, FFJSON_CTXOPEN
-			, "id", &FF_GETPTR(conn_serv, sib, cx->upstm.first)->surl
+			, "id", &FF_GETPTR(conn_serv, sib, fflist_first(&cx->upstm))->surl
 			, "connected", (int64)cx->connected
 			, "active", (int64)cx->active
 			, FFJSON_CTXCLOSE
@@ -749,7 +749,7 @@ static void conn_connect(fsv_conn *c, int flags)
 
 	} else if (c->ipv6) {
 
-		struct in6_addr ip6;
+		ffip6 ip6;
 		ffstr s;
 
 		ffstr_set(&s, c->host.ptr, c->hostlen);
@@ -765,7 +765,7 @@ static void conn_connect(fsv_conn *c, int flags)
 			return;
 		}
 
-		ffip6_set(&adr, &ip6);
+		ffip6_set(&adr, (struct in6_addr*)&ip6);
 
 	} else {
 		conn_resolve(c);
@@ -1241,7 +1241,7 @@ static void conx_serv_mark_down(fsv_conctx *cx, conn_serv *cs)
 
 static FFINL conn_serv * conx_nextserv(fsv_conctx *cx, conn_serv *cs)
 {
-	fflist_item *next = ((cs->sib.next != fflist_sentl(&cx->upstm)) ? cs->sib.next : cx->upstm.first);
+	fflist_item *next = ((cs->sib.next != fflist_sentl(&cx->upstm)) ? cs->sib.next : fflist_first(&cx->upstm));
 	return FF_GETPTR(conn_serv, sib, next);
 }
 

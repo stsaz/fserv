@@ -183,7 +183,6 @@ static void * srv_create(void)
 		ffsysconf sc;
 		ffsc_init(&sc);
 		serv->cfg.pagesize = ffsc_get(&sc, _SC_PAGESIZE);
-		_ffsc_ncpu = ffsc_get(&sc, _SC_NPROCESSORS_ONLN);
 	}
 
 	serv->logctx_empty.level = 0; //no log levels
@@ -526,7 +525,7 @@ static char* srv_getpath(char *dst, size_t *dstlen, const char *fn, size_t len)
 static const fsv_modinfo * srv_findmod(const char *name, size_t namelen)
 {
 	fmodule *m;
-	FFLIST_WALK(&serv->mods, m, sib) {
+	_FFLIST_WALK(&serv->mods, m, sib) {
 		if (0 == ffs_icmpz(name, namelen, m->name))
 			return &m->mod;
 	}
@@ -704,8 +703,7 @@ static int srv_readpid(void)
 
 static int srv_initsigs(void)
 {
-	if (0 != ffsig_mask(SIG_BLOCK, sigs, FFCNT(sigs)))
-		return FFERR_SYSTEM;
+	ffsig_mask(SIG_BLOCK, sigs, FFCNT(sigs));
 
 	ffsig_init(&serv->sigs_task);
 	if (0 != ffsig_ctl(&serv->sigs_task, serv->kq, sigs, FFCNT(sigs), &srv_handlesig))
@@ -931,7 +929,7 @@ static int srv_startmods(void)
 	size_t r;
 	fmodule *m;
 
-	FFLIST_WALK(&serv->mods, m, sib) {
+	_FFLIST_WALK(&serv->mods, m, sib) {
 		dbglog(FSV_LOG_DBGFLOW, "starting module %s", m->name);
 
 		r = m->mod.f->sig(FSVCORE_SIGSTART);
@@ -1003,7 +1001,7 @@ done:
 static void srv_reopen()
 {
 	fmodule *m;
-	FFLIST_WALK(&serv->mods, m, sib) {
+	_FFLIST_WALK(&serv->mods, m, sib) {
 		if (m->mod.f->sig == NULL)
 			continue;
 		m->mod.f->sig(FSVCORE_SIGREOPEN);
@@ -1070,7 +1068,7 @@ end:
 
 static int srv_stop(int sig, fmodule *last)
 {
-	fflist_item *li = serv->mods.last;
+	fflist_item *li = fflist_last(&serv->mods);
 
 	if (last != NULL)
 		li = &last->sib;
@@ -1090,7 +1088,7 @@ static int srv_stop(int sig, fmodule *last)
 static void srv_destroymods(void)
 {
 	fmodule *m;
-	FFLIST_WALK(&serv->mods, m, sib) {
+	_FFLIST_WALK(&serv->mods, m, sib) {
 		m->mod.f->destroy();
 	}
 }

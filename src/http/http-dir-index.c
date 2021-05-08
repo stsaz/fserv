@@ -43,7 +43,7 @@ typedef struct drix_con {
 
 typedef struct direntry {
 	ffstr fn;
-	ffdir_einfo fi;
+	fffileinfo fi;
 } direntry;
 
 typedef struct direntries {
@@ -239,9 +239,9 @@ static void dirents_free(direntries *e)
 /** Get list of files in directory. */
 static int dirents_fill(direntries *e)
 {
-	const ffdir_einfo *fi;
+	const fffileinfo *fi;
 	direntry *ent;
-	ffsyschar *name;
+	const char *name;
 	char *fn;
 
 	if (e->use_crc)
@@ -255,31 +255,32 @@ static int dirents_fill(direntries *e)
 			break;
 		}
 
-		name = ffdir_entryname(&e->de);
-		if ((e->de.namelen == 1 && name[0] == '.') // ".."
+		name = ffdir_entry_name(&e->de);
+		ffsize namelen = ffsz_len(name);
+		if ((namelen == 1 && name[0] == '.') // ".."
 			|| ((name[0] == '.') && !e->show_hidden)) // ".*"
 			continue;
 
-		fi = ffdir_entryinfo(&e->de);
+		fi = ffdir_entry_info(&e->de);
 		if (fi == NULL)
 			return FFERR_SYSTEM;
 
 		if (NULL == ffarr_grow(&e->ents, 1, FFARR_GROWQUARTER))
 			return FFERR_BUFGROW;
 
-		fn = (char*)ffmem_alloc(e->de.namelen + 1);
+		fn = (char*)ffmem_alloc(namelen + 1);
 		if (fn == NULL)
 			return FFERR_BUFALOC;
 
 		ent = ffarr_push(&e->ents, direntry);
-		ffstr_set(&ent->fn, fn, e->de.namelen);
-		ffs_copyq(ent->fn.ptr, ent->fn.ptr + e->de.namelen + 1, name, e->de.namelen + 1);
+		ffstr_set(&ent->fn, fn, namelen);
+		ffmem_copy(ent->fn.ptr, name, namelen + 1);
 
 		ent->fi = *fi;
 
 		if (e->use_crc) {
 			ffcrc32_updatestr(&e->crc, ent->fn.ptr, ent->fn.len);
-			ffcrc32_updatestr(&e->crc, (char*)fi, sizeof(ffdir_einfo));
+			ffcrc32_updatestr(&e->crc, (char*)fi, sizeof(*fi));
 		}
 	}
 

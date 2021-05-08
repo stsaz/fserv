@@ -161,7 +161,7 @@ static int FFTHDCALL test_http_run(void *udata)
 	port = ffurl_get(&u, ht->addr.ptr, FFURL_PORT);
 	x(0 == ffaddr_set(&a, host.ptr, host.len, port.ptr, port.len));
 
-	FFLIST_WALK(&ht->reqs, rq, li) {
+	_FFLIST_WALK(&ht->reqs, rq, li) {
 
 		if (sk == FF_BADSKT) {
 			sk = ffskt_create(AF_INET, SOCK_STREAM, IPPROTO_TCP);

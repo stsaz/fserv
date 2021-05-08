@@ -194,7 +194,7 @@ static int htpx_conf_reqhdrs_item(ffparser_schem *ps, htpxctx *px, const ffstr *
 	if (px->conf_req_host) {
 		px->conf_req_host = 0;
 		ffstr_free(&px->req_host);
-		if (NULL == ffstr_copy(&px->req_host, val->ptr, val->len))
+		if (NULL == ffstr_dup(&px->req_host, val->ptr, val->len))
 			return FFPARS_ESYS;
 		return 0;
 

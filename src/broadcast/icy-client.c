@@ -523,6 +523,10 @@ static int icyx_detectbitrate(icyclient *c, const char *data, size_t sz)
 	c->firstMpegHdr = *fr;
 	c->mpegHdr = 1;
 	bx->byterate = ffmpg_hdr_bitrate(fr) / 8;
+	static const char ffmpg_strchannel[4][8] = {
+		"stereo", "joint", "dual", "mono"
+	};
+
 	dbglog(c->lx, FSV_LOG_DBGFLOW, "mpeg header found at pos %L.  %ukbps, %uKHz, %s, CRC:%u"
 		, (size_t)((char*)fr - d), ffmpg_hdr_bitrate(fr)/1000, (int)ffmpg_hdr_sample_rate(fr)/1000
 		, ffmpg_strchannel[fr->channel], !fr->noprotect);
